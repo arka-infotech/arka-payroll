@@ -1,5 +1,5 @@
 name: arka_payroll
-description: Internal payroll & salary slip client — Arka Infotech Software Solutions LLP
+description: AIPS — Arka Infotech Payroll System
 publish_to: "none"
 version: 1.0.0+1
 
@@ -17,11 +17,38 @@ dependencies:
   printing: ^5.13.4
   pdf: ^3.11.1
   go_router: ^14.6.2
+  google_fonts: ^6.2.1
+  flutter_animate: ^4.5.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: assets/branding/aips_icon.png
+  adaptive_icon_background: "#0B3D5C"
+  adaptive_icon_foreground: assets/branding/aips_icon.png
+  web:
+    generate: true
+    image_path: assets/branding/aips_icon.png
+    background_color: "#0B3D5C"
+    theme_color: "#0B3D5C"
+  macos:
+    generate: true
+    image_path: assets/branding/aips_icon.png
+  windows:
+    generate: true
+    image_path: assets/branding/aips_icon.png
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/branding/source_light.png
+    - assets/branding/source_dark.png
+    - assets/branding/aips_logo_light.png
+    - assets/branding/aips_logo_dark.png
+    - assets/branding/aips_icon.png

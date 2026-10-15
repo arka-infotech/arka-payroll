@@ -1,21 +1,29 @@
 /**
- * Karnataka Professional Tax slabs (Bengaluru default for Arka Infotech).
- * Source: Karnataka Tax on Professions, Trades, Callings and Employments Act.
+ * Maharashtra Professional Tax (PT) — mandatory for salaried employees.
+ * Official monthly slabs (startup / MSME payroll, FY 2025-26 style):
  *
- * Monthly gross salary:
- *   ≤ ₹14,999  → ₹0
- *   ≥ ₹15,000  → ₹200 (₹300 in February for annual reconciliation in some years)
+ *   Gross ≤ ₹7,500           → ₹0
+ *   Gross ₹7,501 – ₹10,000   → ₹175
+ *   Gross > ₹10,000          → ₹200
+ *     except March (month 3) → ₹300  (annual cap reconciliation → ₹2,500)
  */
-export function calculateKarnatakaProfessionalTax(
+export function calculateMaharashtraProfessionalTax(
   monthlyGross: number,
   month: number,
 ): number {
-  if (monthlyGross < 15_000) {
+  if (monthlyGross <= 7_500) {
     return 0;
   }
-  // February surcharge commonly applied for annual PT of ₹2,500
-  if (month === 2) {
+  if (monthlyGross <= 10_000) {
+    return 175;
+  }
+  // March auto-trigger — HR does not need to remember this
+  if (month === 3) {
     return 300;
   }
   return 200;
 }
+
+/** @deprecated Use calculateMaharashtraProfessionalTax — kept for import safety. */
+export const calculateKarnatakaProfessionalTax =
+  calculateMaharashtraProfessionalTax;

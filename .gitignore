@@ -54,9 +54,12 @@ backend/prisma/*.db
 backend/uploads/
 backend/tmp/
 backend/pdf-output/
+backend/.pg-data/
+scripts/.pg-data/
 
 # Misc
 *.pem
 *.p12
 *.key
 .turbo/
+.venv-img/

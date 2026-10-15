@@ -2,18 +2,20 @@ import {
   Body,
   Controller,
   Get,
-  Header,
   Param,
   ParseIntPipe,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Res,
   UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { IsString, MinLength } from 'class-validator';
 import { PayrollService } from './payroll.service';
 import { ProcessPayrollDto } from './dto/process-payroll.dto';
+import { UpdateSlipDocumentDto } from './dto/update-slip-document.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -21,19 +23,31 @@ import { AppRole } from '../../common/enums/role.enum';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 
+class UnlockPayrollDto extends ProcessPayrollDto {
+  @IsString()
+  @MinLength(8)
+  superAdminPassword!: string;
+}
+
 @Controller('payroll')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class PayrollController {
   constructor(private readonly payrollService: PayrollService) {}
 
-  /** HR grid seed: employees + existing run for a period. */
+  @Get('stats')
+  @Roles(AppRole.HR_ADMIN, AppRole.SUPER_ADMIN)
+  stats() {
+    return this.payrollService.dashboardStats();
+  }
+
   @Get('grid')
   @Roles(AppRole.HR_ADMIN, AppRole.SUPER_ADMIN)
   grid(
     @Query('year', ParseIntPipe) year: number,
     @Query('month', ParseIntPipe) month: number,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.payrollService.listPayrollGridSeed(year, month);
+    return this.payrollService.listPayrollGridSeed(year, month, user);
   }
 
   @Get('period')
@@ -41,24 +55,43 @@ export class PayrollController {
   listPeriod(
     @Query('year', ParseIntPipe) year: number,
     @Query('month', ParseIntPipe) month: number,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.payrollService.listForPeriod(year, month);
+    return this.payrollService.listForPeriod(year, month, user);
   }
 
-  /** Employee: own slips only. */
+  @Post('save-draft')
+  @Roles(AppRole.HR_ADMIN, AppRole.SUPER_ADMIN)
+  saveDraft(@Body() dto: ProcessPayrollDto, @CurrentUser() user: JwtPayload) {
+    return this.payrollService.saveDraft(dto, user);
+  }
+
   @Get('my')
   @Roles(AppRole.EMPLOYEE, AppRole.HR_ADMIN, AppRole.SUPER_ADMIN)
   mySlips(@CurrentUser() user: JwtPayload) {
     return this.payrollService.listMySlips(user.sub);
   }
 
+  @Post('preview')
+  @Roles(AppRole.HR_ADMIN, AppRole.SUPER_ADMIN)
+  preview(@Body() dto: ProcessPayrollDto, @CurrentUser() user: JwtPayload) {
+    return this.payrollService.preview(dto, user);
+  }
+
   @Post('process')
   @Roles(AppRole.HR_ADMIN, AppRole.SUPER_ADMIN)
-  process(
-    @Body() dto: ProcessPayrollDto,
+  process(@Body() dto: ProcessPayrollDto, @CurrentUser() user: JwtPayload) {
+    return this.payrollService.processMonthly(dto, user);
+  }
+
+  /** Overwrite a LOCKED slip — requires Super Admin password. */
+  @Post('unlock-reprocess')
+  @Roles(AppRole.HR_ADMIN, AppRole.SUPER_ADMIN)
+  unlockReprocess(
+    @Body() dto: UnlockPayrollDto,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.payrollService.processMonthly(dto, user.sub);
+    return this.payrollService.unlockAndReprocess(dto, user);
   }
 
   @Post('process-batch')
@@ -76,8 +109,18 @@ export class PayrollController {
       body.year,
       body.month,
       body.entries,
-      user.sub,
+      user,
     );
+  }
+
+  @Patch(':id/document')
+  @Roles(AppRole.HR_ADMIN, AppRole.SUPER_ADMIN)
+  updateDocument(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateSlipDocumentDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.payrollService.updateSlipDocument(id, dto, user);
   }
 
   @Get(':id')
@@ -89,10 +132,8 @@ export class PayrollController {
     return this.payrollService.getSlipMeta(id, user);
   }
 
-  /** A4 PDF download / print source. */
   @Get(':id/pdf')
   @Roles(AppRole.EMPLOYEE, AppRole.HR_ADMIN, AppRole.SUPER_ADMIN)
-  @Header('Content-Type', 'application/pdf')
   async pdf(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: JwtPayload,
@@ -102,9 +143,10 @@ export class PayrollController {
       id,
       user,
     );
+    res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `inline; filename="${filename}"`,
+      `attachment; filename="${filename.replace(/"/g, '')}"`,
     );
     res.send(buffer);
   }

@@ -32,25 +32,46 @@ arka-payroll/
 - Docker (PostgreSQL)
 - Flutter SDK ≥ 3.3 (for the client)
 
-## Bootstrap
+## Bootstrap (no Docker required)
+
+Docker Desktop is optional. If `docker` is not installed, use the embedded Postgres helper:
 
 ```bash
-# 1. Database
-docker compose up -d
+# Terminal 1 — database (keep running)
+./scripts/dev-db.sh
 
-# 2. Backend
+# Terminal 2 — API
 cp .env.example backend/.env
 cd backend && npm install
 npx prisma migrate deploy
 npm run prisma:seed
 npm run start:dev
 
-# 3. Frontend (new terminal)
+# Terminal 3 — Flutter client
 cd frontend
-flutter create --platforms=web,macos,windows,linux .
+flutter create --platforms=web,macos,windows,linux .   # first time only
 flutter pub get
-flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:3000/api/v1
+flutter run -d macos --dart-define=API_BASE_URL=http://localhost:3000/api/v1
+# or: flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:3000/api/v1
 ```
+
+### If you prefer Docker
+
+Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), then:
+
+```bash
+docker compose up -d
+# continue with Terminal 2 + 3 above (skip ./scripts/dev-db.sh)
+```
+
+### Common errors
+
+| Error | Cause | Fix |
+|-------|--------|-----|
+| `zsh: command not found: docker` | Docker not installed | Use `./scripts/dev-db.sh` or install Docker Desktop |
+| `Can't reach database server at localhost:5432` | Postgres not running | Start `./scripts/dev-db.sh` or `docker compose up -d` first |
+| Flutter `Uint8List` / PDF errors | Fixed in current code | `git pull` then `flutter pub get` |
+| Frontend login fails / connection refused | API not running | Start backend on port 3000 |
 
 Default Super Admin (change immediately):
 

@@ -1,11 +1,34 @@
 {
-  "name": "Arka Payroll",
-  "short_name": "Arka Payroll",
-  "start_url": ".",
-  "display": "standalone",
-  "background_color": "#0B3D5C",
-  "theme_color": "#0B3D5C",
-  "description": "Internal payroll portal — Arka Infotech Software Solutions LLP",
-  "orientation": "landscape-primary",
-  "icons": []
+    "name": "Arka Payroll",
+    "short_name": "Arka Payroll",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#0B3D5C",
+    "theme_color": "#0B3D5C",
+    "description": "Internal payroll portal — Arka Infotech Software Solutions LLP",
+    "orientation": "landscape-primary",
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
 }

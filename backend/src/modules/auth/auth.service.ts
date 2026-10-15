@@ -5,12 +5,14 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AppRole } from '../../common/enums/role.enum';
 import { LoginDto } from './dto/login.dto';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly audit: AuditService,
   ) {}
 
   async login(dto: LoginDto) {
@@ -18,8 +20,11 @@ export class AuthService {
       where: { email: dto.email.toLowerCase().trim() },
     });
 
-    if (!user || user.status !== 'ACTIVE') {
+    if (!user || user.status === 'BANNED' || user.status === 'TERMINATED') {
       throw new UnauthorizedException('Invalid credentials');
+    }
+    if (user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Account inactive');
     }
 
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
@@ -27,12 +32,27 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastSeenAt: new Date() },
+    });
+
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
       role: user.role as AppRole,
       employeeCode: user.employeeCode,
     };
+
+    await this.audit.write({
+      actorId: user.id,
+      actorEmail: user.email,
+      actorRole: user.role as AppRole,
+      action: 'AUTH_LOGIN',
+      entity: 'user',
+      entityId: user.id,
+      summary: `Login ${user.email}`,
+    });
 
     return {
       accessToken: await this.jwt.signAsync(payload),
@@ -49,6 +69,11 @@ export class AuthService {
   }
 
   async me(userId: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { lastSeenAt: new Date() },
+    });
+
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -62,9 +87,17 @@ export class AuthService {
         status: true,
       },
     });
-    if (!user) {
+    if (!user || user.status !== 'ACTIVE') {
       throw new UnauthorizedException();
     }
     return user;
+  }
+
+  async heartbeat(userId: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { lastSeenAt: new Date() },
+    });
+    return { ok: true };
   }
 }

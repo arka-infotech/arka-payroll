@@ -53,6 +53,32 @@ class ApiClient {
     return _decode(res);
   }
 
+  Future<dynamic> patch(String path, {Object? body, bool auth = true}) async {
+    final res = await _http.patch(
+      _uri(path),
+      headers: await _headers(auth: auth),
+      body: body == null ? null : jsonEncode(body),
+    );
+    return _decode(res);
+  }
+
+  Future<dynamic> put(String path, {Object? body, bool auth = true}) async {
+    final res = await _http.put(
+      _uri(path),
+      headers: await _headers(auth: auth),
+      body: body == null ? null : jsonEncode(body),
+    );
+    return _decode(res);
+  }
+
+  Future<dynamic> delete(String path, {bool auth = true}) async {
+    final res = await _http.delete(
+      _uri(path),
+      headers: await _headers(auth: auth),
+    );
+    return _decode(res);
+  }
+
   Future<List<int>> getBytes(String path) async {
     final res = await _http.get(_uri(path), headers: await _headers());
     if (res.statusCode >= 400) {
@@ -64,11 +90,19 @@ class ApiClient {
   dynamic _decode(http.Response res) {
     final decoded = res.body.isEmpty ? null : jsonDecode(res.body);
     if (res.statusCode >= 400) {
-      final msg = decoded is Map && decoded['message'] != null
-          ? decoded['message'].toString()
-          : res.body;
+      final msg = _errorMessage(decoded, res.body);
       throw ApiException(res.statusCode, msg);
     }
     return decoded;
+  }
+
+  String _errorMessage(dynamic decoded, String fallback) {
+    if (decoded is! Map) return fallback;
+    final message = decoded['message'];
+    if (message is List) {
+      return message.map((e) => e.toString()).join('\n');
+    }
+    if (message != null) return message.toString();
+    return fallback;
   }
 }

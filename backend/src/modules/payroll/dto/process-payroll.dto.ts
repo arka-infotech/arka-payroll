@@ -3,8 +3,10 @@ import {
   IsInt,
   IsNumber,
   IsOptional,
+  IsString,
   IsUUID,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
 
@@ -52,4 +54,10 @@ export class ProcessPayrollDto {
   @IsOptional()
   @IsBoolean()
   epfOnActuals?: boolean;
+
+  /** Printed on the PDF slip when set (max 500 chars). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  slipNotes?: string;
 }

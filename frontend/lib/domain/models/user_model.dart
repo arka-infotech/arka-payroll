@@ -19,6 +19,7 @@ class UserModel {
 
   String get fullName => '$firstName $lastName';
   bool get isHr => role == 'HR_ADMIN' || role == 'SUPER_ADMIN';
+  bool get isSuperAdmin => role == 'SUPER_ADMIN';
   bool get isEmployee => role == 'EMPLOYEE';
 
   factory UserModel.fromJson(Map<String, dynamic> json) {

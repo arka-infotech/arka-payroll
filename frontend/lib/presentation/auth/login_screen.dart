@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:arka_payroll/core/config/app_config.dart';
-import 'package:arka_payroll/core/theme/arka_theme.dart';
+import 'package:arka_payroll/core/theme/theme_controller.dart';
 import 'package:arka_payroll/presentation/auth/auth_state.dart';
+import 'package:arka_payroll/presentation/widgets/aips_logo.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -35,124 +36,139 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthState>();
+    final theme = context.watch<ThemeController>();
+    final dark = Theme.of(context).brightness == Brightness.dark;
     final wide = MediaQuery.sizeOf(context).width > 900;
 
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFF0B3D5C), Color(0xFF1A6B7A), Color(0xFF0E4A5C)],
+            colors: dark
+                ? const [Color(0xFF0A0C10), Color(0xFF15202B), Color(0xFF0E4A5C)]
+                : const [Color(0xFF0B3D5C), Color(0xFF1A6B7A), Color(0xFF0E4A5C)],
           ),
         ),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: wide ? 420 : 380),
-            child: Card(
-              elevation: 8,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+        child: Stack(
+          children: [
+            Positioned(
+              top: 16,
+              right: 16,
+              child: IconButton(
+                tooltip: 'Toggle theme',
+                onPressed: theme.toggle,
+                icon: Icon(
+                  dark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                  color: Colors.white,
+                ),
               ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(28, 32, 28, 28),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        AppConfig.companyName,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: ArkaColors.navy,
-                          height: 1.25,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Payroll Portal',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: ArkaColors.muted,
-                        ),
-                      ),
-                      const SizedBox(height: 28),
-                      TextFormField(
-                        controller: _email,
-                        keyboardType: TextInputType.emailAddress,
-                        autofillHints: const [AutofillHints.username],
-                        decoration: const InputDecoration(
-                          labelText: 'Work email',
-                          prefixIcon: Icon(Icons.mail_outline),
-                        ),
-                        validator: (v) {
-                          if (v == null || !v.contains('@')) {
-                            return 'Enter a valid email';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 14),
-                      TextFormField(
-                        controller: _password,
-                        obscureText: _obscure,
-                        autofillHints: const [AutofillHints.password],
-                        decoration: InputDecoration(
-                          labelText: 'Password',
-                          prefixIcon: const Icon(Icons.lock_outline),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _obscure
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined,
+            ),
+            Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: wide ? 420 : 380),
+                child: Card(
+                  elevation: 8,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(28, 28, 28, 28),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Theme-aware transparent logo (not a raw screenshot plate).
+                          const AipsLogo(height: 110),
+                          const SizedBox(height: 12),
+                          Text(
+                            AppConfig.companyName,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            AppConfig.appTagline,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.labelMedium,
+                          ),
+                          const SizedBox(height: 24),
+                          TextFormField(
+                            controller: _email,
+                            keyboardType: TextInputType.emailAddress,
+                            autofillHints: const [AutofillHints.username],
+                            decoration: const InputDecoration(
+                              labelText: 'Work email',
+                              prefixIcon: Icon(Icons.mail_outline),
                             ),
-                            onPressed: () =>
-                                setState(() => _obscure = !_obscure),
+                            validator: (v) {
+                              if (v == null || !v.contains('@')) {
+                                return 'Enter a valid email';
+                              }
+                              return null;
+                            },
                           ),
-                        ),
-                        validator: (v) {
-                          if (v == null || v.length < 8) {
-                            return 'Minimum 8 characters';
-                          }
-                          return null;
-                        },
-                        onFieldSubmitted: (_) => _submit(),
-                      ),
-                      if (auth.error != null) ...[
-                        const SizedBox(height: 12),
-                        Text(
-                          auth.error!,
-                          style: const TextStyle(
-                            color: Colors.redAccent,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 22),
-                      ElevatedButton(
-                        onPressed: auth.busy ? null : _submit,
-                        child: auth.busy
-                            ? const SizedBox(
-                                height: 18,
-                                width: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
+                          const SizedBox(height: 14),
+                          TextFormField(
+                            controller: _password,
+                            obscureText: _obscure,
+                            autofillHints: const [AutofillHints.password],
+                            decoration: InputDecoration(
+                              labelText: 'Password',
+                              prefixIcon: const Icon(Icons.lock_outline),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscure
+                                      ? Icons.visibility_outlined
+                                      : Icons.visibility_off_outlined,
                                 ),
-                              )
-                            : const Text('Sign in'),
+                                onPressed: () =>
+                                    setState(() => _obscure = !_obscure),
+                              ),
+                            ),
+                            validator: (v) {
+                              if (v == null || v.length < 8) {
+                                return 'Minimum 8 characters';
+                              }
+                              return null;
+                            },
+                            onFieldSubmitted: (_) => _submit(),
+                          ),
+                          if (auth.error != null) ...[
+                            const SizedBox(height: 12),
+                            Text(
+                              auth.error!,
+                              style: const TextStyle(
+                                color: Colors.redAccent,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 22),
+                          ElevatedButton(
+                            onPressed: auth.busy ? null : _submit,
+                            child: auth.busy
+                                ? const SizedBox(
+                                    height: 18,
+                                    width: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text('Sign in'),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );

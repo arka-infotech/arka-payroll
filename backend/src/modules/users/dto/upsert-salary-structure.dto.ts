@@ -45,6 +45,29 @@ export class UpsertSalaryStructureDto {
   epfApplicable?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  esicApplicable?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  flexBreakup?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  professionalTaxApplicable?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  tdsApplicable?: boolean;
+
+  /** Salary credit day of month (1–28) for auto slip draft. */
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(28)
+  salaryCreditDay?: number;
+
+  @IsOptional()
   @IsString()
   taxRegime?: 'NEW' | 'OLD';
 

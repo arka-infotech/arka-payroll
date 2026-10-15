@@ -1,11 +1,31 @@
-class AppConfig {
-  static const String appName = 'Arka Payroll';
-  static const String companyName = 'Arka Infotech Software Solutions LLP';
+import 'package:flutter/foundation.dart';
 
-  /// Override at run time:
-  /// `flutter run --dart-define=API_BASE_URL=http://localhost:3000/api/v1`
-  static const String apiBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'http://localhost:3000/api/v1',
-  );
+class AppConfig {
+  static const String appName = 'AIPS';
+  static const String companyName = 'Arka Infotech Software Solutions LLP';
+  static const String appTagline = 'Payroll Portal';
+
+  /// Light theme → `source_light.png` · Dark theme → `source_dark.png`
+  static const String logoLight = 'assets/branding/source_light.png';
+  static const String logoDark = 'assets/branding/source_dark.png';
+  static const String appIcon = 'assets/branding/aips_icon.png';
+
+  /// Override: `--dart-define=API_BASE_URL=http://192.168.0.154:3000/api/v1`
+  static const String _apiFromEnv = String.fromEnvironment('API_BASE_URL');
+
+  /// This Mac on the current Wi‑Fi. Phone and computer must be on the same network.
+  /// Update if DHCP assigns a new address (`ipconfig getifaddr en0`).
+  static const String lanHost = '192.168.0.154';
+
+  /// Phones cannot use localhost. Emulator can still reach this LAN address
+  /// when the API listens on 0.0.0.0.
+  static String get apiBaseUrl {
+    if (_apiFromEnv.isNotEmpty) return _apiFromEnv;
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS)) {
+      return 'http://$lanHost:3000/api/v1';
+    }
+    return 'http://localhost:3000/api/v1';
+  }
 }

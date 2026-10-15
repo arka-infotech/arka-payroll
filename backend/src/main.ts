@@ -22,8 +22,8 @@ async function bootstrap(): Promise<void> {
   );
 
   const port = config.get<number>('PORT', 3000);
-  await app.listen(port);
-  console.log(`[Arka Payroll] API listening on :${port}`);
+  await app.listen(port, '0.0.0.0');
+  console.log(`[Arka Payroll] API listening on 0.0.0.0:${port}`);
 }
 
 bootstrap();

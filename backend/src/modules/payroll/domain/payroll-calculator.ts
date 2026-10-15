@@ -1,5 +1,5 @@
 import { calculateEmployeeEpf } from './epf.calculator';
-import { calculateKarnatakaProfessionalTax } from './professional-tax.calculator';
+import { calculateMaharashtraProfessionalTax } from './professional-tax.calculator';
 import { estimateMonthlyTdsNewRegime } from './tds.calculator';
 import { prorate, round2, toNumber } from './money.util';
 
@@ -10,8 +10,13 @@ export interface SalaryStructureInput {
   specialAllowanceMonthly: number | { toString(): string };
   conveyanceMonthly: number | { toString(): string };
   medicalMonthly: number | { toString(): string };
+  /** Startup default: false (< 20 employees — EPF optional). */
   epfApplicable: boolean;
+  /** Startup default: false (< 10 employees — ESIC N/A). */
+  esicApplicable?: boolean;
   taxRegime: string;
+  professionalTaxApplicable?: boolean;
+  tdsApplicable?: boolean;
 }
 
 export interface MonthlyVariablesInput {
@@ -23,7 +28,6 @@ export interface MonthlyVariablesInput {
   specialAdjustment: number;
   otherEarnings: number;
   otherDeductions: number;
-  /** When true, EPF on actual basic (no ₹15k ceiling). */
   epfOnActuals?: boolean;
 }
 
@@ -38,18 +42,18 @@ export interface PayrollComputationResult {
   specialAdjustment: number;
   otherEarnings: number;
   grossEarnings: number;
+  /** Explicit ₹0 when not applicable — kept for bank/visa genuineness. */
   epfEmployee: number;
+  esicEmployee: number;
   professionalTax: number;
   tds: number;
   otherDeductions: number;
   totalDeductions: number;
   netPay: number;
+  lopDeductionEstimate: number;
   snapshot: Record<string, unknown>;
 }
 
-/**
- * Pure computation — no I/O. Safe to unit-test in isolation.
- */
 export function computeMonthlyPayroll(
   structure: SalaryStructureInput,
   vars: MonthlyVariablesInput,
@@ -63,6 +67,10 @@ export function computeMonthlyPayroll(
   const special = toNumber(structure.specialAllowanceMonthly);
   const conveyance = toNumber(structure.conveyanceMonthly);
   const medical = toNumber(structure.medicalMonthly);
+
+  const monthlyFixed = round2(basic + hra + special + conveyance + medical);
+  const lopDeductionEstimate =
+    workingDays > 0 ? round2((monthlyFixed * unpaid) / workingDays) : 0;
 
   const basicEarned = prorate(basic, daysPayable, workingDays);
   const hraEarned = prorate(hra, daysPayable, workingDays);
@@ -85,25 +93,26 @@ export function computeMonthlyPayroll(
       otherEarnings,
   );
 
+  // < 20 employees: EPF optional — default off → explicit ₹0.00 on slip
   const epfEmployee = structure.epfApplicable
     ? calculateEmployeeEpf(basicEarned, vars.epfOnActuals ?? false)
     : 0;
 
-  const professionalTax = calculateKarnatakaProfessionalTax(
-    grossEarnings,
-    vars.month,
-  );
+  // < 10 employees: ESIC N/A — keep column, always ₹0 until enabled
+  const esicEmployee = structure.esicApplicable ? 0 : 0;
 
-  // Project annual taxable ≈ annual CTC − employer statutorys (simplified)
+  const professionalTax = structure.professionalTaxApplicable
+    ? calculateMaharashtraProfessionalTax(grossEarnings, vars.month)
+    : 0;
+
   const projectedAnnual = toNumber(structure.annualCtc);
-  const tds =
-    structure.taxRegime === 'OLD'
-      ? estimateMonthlyTdsNewRegime(projectedAnnual) // swap for Old-regime engine in production
-      : estimateMonthlyTdsNewRegime(projectedAnnual);
+  const tds = structure.tdsApplicable
+    ? estimateMonthlyTdsNewRegime(projectedAnnual)
+    : 0;
 
   const otherDeductions = round2(vars.otherDeductions);
   const totalDeductions = round2(
-    epfEmployee + professionalTax + tds + otherDeductions,
+    epfEmployee + esicEmployee + professionalTax + tds + otherDeductions,
   );
   const netPay = round2(grossEarnings - totalDeductions);
 
@@ -119,13 +128,16 @@ export function computeMonthlyPayroll(
     otherEarnings,
     grossEarnings,
     epfEmployee,
+    esicEmployee,
     professionalTax,
     tds,
     otherDeductions,
     totalDeductions,
     netPay,
+    lopDeductionEstimate,
     snapshot: {
-      engine: 'arka-payroll-v1',
+      engine: 'aips-payroll-mh-v1',
+      state: 'Maharashtra',
       structure: {
         annualCtc: projectedAnnual,
         basic,
@@ -134,9 +146,11 @@ export function computeMonthlyPayroll(
         conveyance,
         medical,
         epfApplicable: structure.epfApplicable,
+        esicApplicable: structure.esicApplicable ?? false,
         taxRegime: structure.taxRegime,
       },
       variables: vars,
+      lopDeductionEstimate,
       computedAt: new Date().toISOString(),
     },
   };
@@ -150,5 +164,10 @@ export function buildTrackingReference(
 ): string {
   const mm = String(month).padStart(2, '0');
   const code = (employeeCode ?? userId.slice(0, 8)).toUpperCase();
-  return `ARKA-${year}-${mm}-${code}`;
+  return `AIPS-${year}-${mm}-${code}`;
+}
+
+/** Calendar days in a month (for Days Worked validation). */
+export function daysInMonth(year: number, month: number): number {
+  return new Date(year, month, 0).getDate();
 }
