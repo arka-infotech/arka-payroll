@@ -1,0 +1,11 @@
+{
+  "name": "Arka Payroll",
+  "short_name": "Arka Payroll",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0B3D5C",
+  "theme_color": "#0B3D5C",
+  "description": "Internal payroll portal — Arka Infotech Software Solutions LLP",
+  "orientation": "landscape-primary",
+  "icons": []
+}

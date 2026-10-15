@@ -1,0 +1,155 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Arka Infotech Software Solutions LLP — Payroll Schema
+// Compliance-first PostgreSQL model for Indian IT payroll (EPF / PT / TDS)
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// System roles. SUPER_ADMIN is a hidden root — never returned in UI user lists.
+enum Role {
+  SUPER_ADMIN
+  HR_ADMIN
+  EMPLOYEE
+}
+
+enum EmploymentStatus {
+  ACTIVE
+  INACTIVE
+  TERMINATED
+}
+
+enum PayrollStatus {
+  DRAFT
+  PROCESSED
+  LOCKED
+  PAID
+}
+
+model User {
+  id           String           @id @default(uuid()) @db.Uuid
+  email        String           @unique
+  passwordHash String           @map("password_hash")
+  role         Role             @default(EMPLOYEE)
+
+  /// Display / legal identity
+  employeeCode String?          @unique @map("employee_code")
+  firstName    String           @map("first_name")
+  lastName     String           @map("last_name")
+  designation  String?
+  dateOfJoining DateTime?       @map("date_of_joining") @db.Date
+  status       EmploymentStatus @default(ACTIVE)
+
+  /// Statutory identifiers (store encrypted at rest in production via app-layer crypto)
+  pan          String?          @db.Char(10)
+  aadhaar      String?          @db.Char(12)
+  uan          String?          @map("uan") @db.VarChar(12)
+
+  /// Bank details for salary credit
+  bankName           String? @map("bank_name")
+  bankAccountNumber  String? @map("bank_account_number")
+  bankIfsc           String? @map("bank_ifsc") @db.VarChar(11)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  salaryStructure SalaryStructure?
+  monthlyPayrolls MonthlyPayroll[]
+
+  @@index([role, status])
+  @@map("users")
+}
+
+/// Base CTC breakup per employee.
+/// Convention: Basic = 40–50% of CTC; HRA = 40–50% of Basic; remainder → Special Allowance.
+model SalaryStructure {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @unique @map("user_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Annual Cost-to-Company (INR)
+  annualCtc Decimal @map("annual_ctc") @db.Decimal(14, 2)
+
+  /// Monthly components (INR)
+  basicMonthly            Decimal @map("basic_monthly") @db.Decimal(12, 2)
+  hraMonthly              Decimal @map("hra_monthly") @db.Decimal(12, 2)
+  specialAllowanceMonthly Decimal @map("special_allowance_monthly") @db.Decimal(12, 2)
+
+  /// Optional fixed monthly components
+  conveyanceMonthly Decimal @default(0) @map("conveyance_monthly") @db.Decimal(12, 2)
+  medicalMonthly    Decimal @default(0) @map("medical_monthly") @db.Decimal(12, 2)
+
+  /// Whether employee opts into EPF (statutory for most)
+  epfApplicable Boolean @default(true) @map("epf_applicable")
+
+  /// Tax regime preference: NEW (default post-FY24) | OLD
+  taxRegime String @default("NEW") @map("tax_regime") @db.VarChar(8)
+
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("salary_structures")
+}
+
+/// One row per employee per calendar month payroll run.
+model MonthlyPayroll {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  /// Payroll period
+  year  Int
+  month Int /// 1–12
+
+  /// Working-days model
+  workingDaysInMonth Int @map("working_days_in_month")
+  daysPayable        Int @map("days_payable")
+  unpaidLeaveDays    Int @default(0) @map("unpaid_leave_days")
+
+  /// Variable inputs punched by HR
+  bonus            Decimal @default(0) @db.Decimal(12, 2)
+  specialAdjustment Decimal @default(0) @map("special_adjustment") @db.Decimal(12, 2)
+  /// Positive = earning; negative = recovery
+  otherEarnings    Decimal @default(0) @map("other_earnings") @db.Decimal(12, 2)
+
+  /// Computed earnings (snapshot at process time)
+  basicEarned            Decimal @map("basic_earned") @db.Decimal(12, 2)
+  hraEarned              Decimal @map("hra_earned") @db.Decimal(12, 2)
+  specialAllowanceEarned Decimal @map("special_allowance_earned") @db.Decimal(12, 2)
+  conveyanceEarned       Decimal @default(0) @map("conveyance_earned") @db.Decimal(12, 2)
+  medicalEarned          Decimal @default(0) @map("medical_earned") @db.Decimal(12, 2)
+  grossEarnings          Decimal @map("gross_earnings") @db.Decimal(12, 2)
+
+  /// Itemized deductions
+  epfEmployee     Decimal @map("epf_employee") @db.Decimal(12, 2)
+  professionalTax Decimal @map("professional_tax") @db.Decimal(12, 2)
+  tds             Decimal @db.Decimal(12, 2)
+  otherDeductions Decimal @default(0) @map("other_deductions") @db.Decimal(12, 2)
+  totalDeductions Decimal @map("total_deductions") @db.Decimal(12, 2)
+
+  netPay Decimal @map("net_pay") @db.Decimal(12, 2)
+
+  /// Unique tracking reference printed on the slip (e.g. ARKA-2026-03-EMP001)
+  trackingReference String @unique @map("tracking_reference")
+
+  status      PayrollStatus @default(DRAFT)
+  processedAt DateTime?     @map("processed_at")
+  processedBy String?       @map("processed_by") @db.Uuid
+
+  /// Opaque JSON snapshot of calculation inputs/outputs for audit
+  calculationSnapshot Json? @map("calculation_snapshot")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, year, month])
+  @@index([year, month, status])
+  @@map("monthly_payroll")
+}
