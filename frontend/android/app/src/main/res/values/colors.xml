@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#000000</color>
+    <!-- System-theme adaptive icon (follows phone light/dark via values-night) -->
+    <color name="ic_launcher_background">#F6F4F1</color>
+    <!-- Forced in-app light / dark launcher aliases -->
+    <color name="ic_launcher_background_light">#F6F4F1</color>
+    <color name="ic_launcher_background_dark">#000000</color>
 </resources>

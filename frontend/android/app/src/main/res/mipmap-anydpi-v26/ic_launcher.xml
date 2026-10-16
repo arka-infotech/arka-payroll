@@ -4,6 +4,9 @@
   <foreground>
       <inset
           android:drawable="@drawable/ic_launcher_foreground"
-          android:inset="16%" />
+          android:inset="12%" />
   </foreground>
+  <!-- Android 13+ Material You themed icon -->
+  <monochrome
+      android:drawable="@drawable/ic_launcher_monochrome" />
 </adaptive-icon>

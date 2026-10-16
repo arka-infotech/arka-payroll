@@ -26,16 +26,19 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.14.3
 
+# Launcher icons: light/dark phone theme uses drawable(-night) + values(-night)
+# in android/app/src/main/res. Re-running this generator overwrites night assets —
+# prefer the hand-tuned night mipmaps/drawables after generate.
 flutter_launcher_icons:
   android: true
   ios: false
-  image_path: assets/branding/aips_icon.png
-  adaptive_icon_background: "#0B3D5C"
-  adaptive_icon_foreground: assets/branding/aips_icon.png
+  image_path: assets/branding/source_light.png
+  adaptive_icon_background: "#F6F4F1"
+  adaptive_icon_foreground: assets/branding/source_light.png
   web:
     generate: true
-    image_path: assets/branding/aips_icon.png
-    background_color: "#0B3D5C"
+    image_path: assets/branding/source_light.png
+    background_color: "#F6F4F1"
     theme_color: "#0B3D5C"
   macos:
     generate: true
