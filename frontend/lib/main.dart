@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
 import 'package:arka_payroll/core/config/app_config.dart';
 import 'package:arka_payroll/core/theme/arka_theme.dart';
 import 'package:arka_payroll/core/theme/theme_controller.dart';
 import 'package:arka_payroll/data/auth/auth_repository.dart';
-import 'package:arka_payroll/data/payroll/payroll_repository.dart';
 import 'package:arka_payroll/presentation/auth/auth_state.dart';
 import 'package:arka_payroll/presentation/router/app_router.dart';
 import 'package:arka_payroll/presentation/router/splash_gate.dart';
+import 'package:arka_payroll/providers/app_providers.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,28 +24,26 @@ Future<void> main() async {
   final router = createRouter(authState, splashGate);
 
   runApp(
-    MultiProvider(
-      providers: [
-        Provider<AuthRepository>.value(value: authRepo),
-        Provider<PayrollRepository>(
-          create: (_) => PayrollRepository(authRepo),
-        ),
-        ChangeNotifierProvider<AuthState>.value(value: authState),
-        ChangeNotifierProvider<ThemeController>.value(value: theme),
+    ProviderScope(
+      retry: arkaRetry,
+      overrides: [
+        authRepositoryProvider.overrideWithValue(authRepo),
+        authStateProvider.overrideWith((ref) => authState),
+        themeControllerProvider.overrideWith((ref) => theme),
       ],
       child: AipsApp(router: router),
     ),
   );
 }
 
-class AipsApp extends StatelessWidget {
+class AipsApp extends ConsumerWidget {
   const AipsApp({super.key, required this.router});
 
   final GoRouter router;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = context.watch<ThemeController>();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = ref.watch(themeControllerProvider);
 
     return MaterialApp.router(
       title: AppConfig.appName,

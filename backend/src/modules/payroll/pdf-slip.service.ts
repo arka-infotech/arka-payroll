@@ -1,4 +1,5 @@
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
 import { Injectable, OnModuleDestroy, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as puppeteer from 'puppeteer';
@@ -48,6 +49,8 @@ type SlipRow = {
 
 type SlipLine = { label: string; amount: number };
 type SlipDocument = {
+  companyName?: string;
+  location?: string;
   employeeName?: string;
   employeeCode?: string;
   payDate?: string;
@@ -77,6 +80,7 @@ const MONTH_NAMES = [
 @Injectable()
 export class PdfSlipService implements OnModuleDestroy {
   private browser: puppeteer.Browser | null = null;
+  private logoDataUri: string | null = null;
 
   constructor(private readonly config: ConfigService) {}
 
@@ -136,7 +140,10 @@ export class PdfSlipService implements OnModuleDestroy {
       const pdf = await page.pdf({
         format: 'A4',
         printBackground: true,
-        margin: { top: '12mm', right: '12mm', bottom: '12mm', left: '12mm' },
+        displayHeaderFooter: true,
+        headerTemplate: '<div></div>',
+        footerTemplate: this.footerTemplate(),
+        margin: { top: '12mm', right: '14mm', bottom: '18mm', left: '14mm' },
       });
       return Buffer.from(pdf);
     } finally {
@@ -145,11 +152,31 @@ export class PdfSlipService implements OnModuleDestroy {
   }
 
   private inr(n: { toString(): string } | number): string {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
+    const formatted = new Intl.NumberFormat('en-IN', {
       minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(toNumber(n));
+    return `₹${formatted}`;
+  }
+
+  private footerTemplate(): string {
+    const logo = this.logoSrc();
+    const mark = logo
+      ? `<img src="${logo}" style="width:14px;height:14px;vertical-align:middle;margin-right:6px;"/>`
+      : '';
+    return `<div style="width:100%;font-size:10px;text-align:center;color:#98a2b3;font-family:Helvetica,Arial,sans-serif;padding:0 12mm;">${mark}Powered by <span style="color:#14808f;font-weight:700;">Arka Payroll</span></div>`;
+  }
+
+  private logoSrc(): string {
+    if (this.logoDataUri !== null) return this.logoDataUri;
+    const file = [
+      join(process.cwd(), 'assets/payslip-logo.png'),
+      join(process.cwd(), 'backend/assets/payslip-logo.png'),
+    ].find((path) => existsSync(path));
+    this.logoDataUri = file
+      ? `data:image/png;base64,${readFileSync(file).toString('base64')}`
+      : '';
+    return this.logoDataUri;
   }
 
   private defaultLines(slip: SlipRow): { earnings: SlipLine[]; deductions: SlipLine[] } {
@@ -181,12 +208,19 @@ export class PdfSlipService implements OnModuleDestroy {
   }
 
   private buildHtml(slip: SlipRow): string {
-    const company = this.config.get<string>(
-      'COMPANY_NAME',
-      'Arka Infotech Software Solutions LLP',
-    );
-    const country = this.config.get<string>('COMPANY_COUNTRY', 'India');
     const doc = asSlipDocument(slip.slipDocument);
+    const company =
+      doc?.companyName?.trim() ||
+      this.config.get<string>(
+        'COMPANY_NAME',
+        'Arka Infotech Software Solutions',
+      );
+    const location =
+      doc?.location?.trim() ||
+      this.config.get<string>(
+        'COMPANY_ADDRESS',
+        'Office .no 512, Suchita Business Park, Patel chowk, opposite Hanuman temple, Shival Nagar, Saibaba Nagar, Pant Nagar, Ghatkopar East, Mumbai, Maharashtra 400077',
+      );
     const defaults = this.defaultLines(slip);
     const earnings = (doc?.earnings?.length ? doc.earnings : defaults.earnings).filter(
       (l) => l.label.trim().length > 0,
@@ -217,6 +251,11 @@ export class PdfSlipService implements OnModuleDestroy {
       </tr>`;
     }).join('');
 
+    const logo = this.logoSrc();
+    const logoHtml = logo
+      ? `<div class="logo"><img src="${logo}" alt=""/></div>`
+      : '';
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -224,103 +263,139 @@ export class PdfSlipService implements OnModuleDestroy {
 <title>Payslip ${escapeHtml(period)}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Helvetica, Arial, sans-serif; color: #1c2430; font-size: 11px; }
-  .company { font-size: 18px; font-weight: 700; }
-  .muted { color: #5c6b7a; margin-top: 2px; }
-  .month-label { margin-top: 14px; font-size: 12px; color: #5c6b7a; }
-  .month { font-size: 16px; font-weight: 700; margin-top: 2px; }
-  .summary { width: 100%; border: 1px solid #e6ebf1; border-radius: 8px; margin-top: 16px; border-collapse: separate; overflow: hidden; }
-  .summary td { padding: 10px 14px; vertical-align: top; }
-  .k { color: #667085; font-size: 10px; }
-  .v { font-weight: 700; margin-top: 2px; }
-  .netbox { background: #e8f7f4; text-align: right; width: 34%; }
-  .net-k { color: #0f766e; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; }
-  .net-v { font-size: 20px; font-weight: 800; color: #0f766e; margin-top: 4px; }
-  .days { margin-top: 8px; color: #344054; }
-  table.grid { width: 100%; border-collapse: collapse; margin-top: 18px; }
-  table.grid th { text-align: left; font-size: 10px; letter-spacing: 0.04em; color: #667085; border-bottom: 1px solid #eaecf0; padding: 8px 6px; }
-  table.grid td { padding: 7px 6px; border-bottom: 1px solid #f2f4f7; }
-  td.num, th.num { text-align: right; }
-  .totals { margin-top: 8px; width: 100%; }
-  .totals td { padding: 8px 6px; font-weight: 700; }
-  .payable { margin-top: 12px; background: #0f766e; color: white; border-radius: 6px; padding: 12px 14px; display: flex; }
-  .payable table { width: 100%; color: white; }
-  .payable .big { font-size: 16px; font-weight: 800; text-align: right; }
-  .words { margin-top: 10px; font-size: 11px; }
-  table.stamps { width: 100%; margin-top: 22px; border-collapse: separate; border-spacing: 14px 0; }
-  .stamp-label { font-size: 10px; font-weight: 700; color: #0f766e; margin-bottom: 6px; }
-  .stamp-box { height: 78px; border: 1.5px dashed #0f766e; border-radius: 6px; }
-  .stamp-hint { margin-top: 4px; font-size: 9px; color: #667085; }
-  .foot { margin-top: 18px; text-align: center; color: #98a2b3; font-size: 10px; }
+  body { font-family: Helvetica, Arial, sans-serif; color: #1f2430; font-size: 12px; background: #fff; }
+  table { border-collapse: collapse; }
+  .top { width: 100%; }
+  .top td { vertical-align: middle; }
+  .brand { display: flex; align-items: center; }
+  .logo { width: 58px; height: 58px; margin-right: 12px; background: transparent; border: none; padding: 0; }
+  .logo img { width: 100%; height: 100%; object-fit: contain; background: transparent; }
+  .identity { max-width: 440px; }
+  .company { font-size: 18px; font-weight: 700; color: #1a1d23; letter-spacing: -0.01em; }
+  .location { margin-top: 3px; color: #8b919a; font-size: 11px; line-height: 1.35; }
+  .period { text-align: right; }
+  .period-k { color: #8b919a; font-size: 12px; }
+  .period-v { margin-top: 2px; font-size: 16px; font-weight: 700; color: #1a1d23; }
+  .summary { width: 100%; margin-top: 28px; }
+  .summary > tbody > tr > td { vertical-align: top; }
+  .section-k { color: #8b919a; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; margin-bottom: 12px; }
+  table.kv { width: 100%; }
+  table.kv td { padding: 5px 0; font-size: 12.5px; }
+  table.kv .lk { color: #6b7280; width: 118px; }
+  table.kv .colon { color: #9aa1ab; width: 16px; }
+  table.kv .lv { color: #1f2430; font-weight: 600; }
+  .netwrap { width: 292px; }
+  .netcard { width: 292px; border: 1px solid #e6e8ee; border-radius: 10px; overflow: hidden; }
+  .net-top { background: #f3fbf6; padding: 16px 16px 12px; }
+  .net-amt-row { display: flex; align-items: stretch; gap: 10px; }
+  .accent { width: 3px; background: #1f9d55; border-radius: 2px; }
+  .net-amt { font-size: 22px; font-weight: 700; color: #1a1d23; line-height: 1.1; }
+  .net-sub { margin-top: 3px; color: #6b7280; font-size: 12px; }
+  .net-days { padding: 10px 16px 14px; border-top: 1px dotted #d5d9e0; }
+  .net-days table { width: 100%; }
+  .net-days td { padding: 3px 0; color: #4b5563; font-size: 12.5px; }
+  .net-days .c { width: 18px; text-align: center; color: #9aa1ab; }
+  .net-days .n { text-align: right; font-weight: 600; color: #1f2430; width: 36px; }
+  .panel { width: 100%; margin-top: 22px; border: 1px solid #e6e8ee; border-radius: 10px; overflow: hidden; border-collapse: separate; border-spacing: 0; }
+  .panel th { text-align: left; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: #8b919a; padding: 12px 14px 8px; border-bottom: 1px dotted #e1e4ea; }
+  .panel th.num, .panel td.num { text-align: right; }
+  .panel td { padding: 11px 14px; border-bottom: 1px dotted #eceff3; font-size: 12.5px; }
+  .panel tr.gross td { background: #f6f7f9; border-bottom: none; font-weight: 700; }
+  .payable { width: 100%; margin-top: 16px; border: 1px solid #e6e8ee; border-radius: 10px; overflow: hidden; border-collapse: separate; }
+  .payable td { padding: 14px 16px; vertical-align: middle; }
+  .payable .title { font-size: 13px; font-weight: 800; letter-spacing: 0.02em; }
+  .payable .sub { margin-top: 3px; color: #8b919a; font-size: 11.5px; }
+  .payable .amt { width: 28%; background: #f3fbf6; text-align: right; font-size: 15px; font-weight: 700; border-left: 1px solid #e6e8ee; }
+  .words { margin-top: 22px; text-align: center; color: #4b5563; font-size: 12px; }
+  .rule { margin: 14px 48px 0; border-top: 1px solid #e6e8ee; }
+  .foot { margin-top: 22px; text-align: center; color: #b0b6c0; font-size: 12px; }
+  .notes { margin-top: 10px; text-align: center; color: #6b7280; font-size: 11.5px; }
 </style>
 </head>
 <body>
-  <div class="company">${escapeHtml(company)}</div>
-  <div class="muted">${escapeHtml(country)}</div>
-  <div class="month-label">Payslip For the Month</div>
-  <div class="month">${escapeHtml(period)}</div>
-
-  <table class="summary">
+  <table class="top">
     <tr>
       <td>
-        <div style="font-size:11px;font-weight:800;letter-spacing:.04em;margin-bottom:8px;">EMPLOYEE SUMMARY</div>
-        <div class="k">Employee Name</div><div class="v">${escapeHtml(employeeName)}</div>
-        <div class="k" style="margin-top:8px;">Employee ID</div><div class="v">${escapeHtml(employeeCode)}</div>
-        <div class="k" style="margin-top:8px;">Pay Period</div><div class="v">${escapeHtml(period)}</div>
-        <div class="k" style="margin-top:8px;">Pay Date</div><div class="v">${escapeHtml(String(payDate))}</div>
+        <table><tr>
+          <td>${logoHtml}</td>
+          <td>
+            <div class="identity">
+              <div class="company">${escapeHtml(company)}</div>
+              <div class="location">${escapeHtml(location)}</div>
+            </div>
+          </td>
+        </tr></table>
       </td>
-      <td class="netbox">
-        <div class="net-k">Total Net Pay</div>
-        <div class="net-v">${this.inr(net)}</div>
-        <div class="days"><strong>Paid Days</strong> ${paidDays}</div>
-        <div class="days"><strong>LOP Days</strong> ${lopDays}</div>
+      <td class="period">
+        <div class="period-k">Payslip For the Month</div>
+        <div class="period-v">${escapeHtml(period)}</div>
       </td>
     </tr>
   </table>
 
-  <table class="grid">
+  <table class="summary">
+    <tr>
+      <td>
+        <div class="section-k">EMPLOYEE SUMMARY</div>
+        <table class="kv">
+          <tr><td class="lk">Employee Name</td><td class="colon">:</td><td class="lv">${escapeHtml(employeeName)}</td></tr>
+          <tr><td class="lk">Employee ID</td><td class="colon">:</td><td class="lv">${escapeHtml(employeeCode)}</td></tr>
+          <tr><td class="lk">Pay Period</td><td class="colon">:</td><td class="lv">${escapeHtml(period)}</td></tr>
+          <tr><td class="lk">Pay Date</td><td class="colon">:</td><td class="lv">${escapeHtml(String(payDate))}</td></tr>
+        </table>
+      </td>
+      <td class="netwrap">
+        <div class="netcard">
+          <div class="net-top">
+            <div class="net-amt-row">
+              <div class="accent"></div>
+              <div>
+                <div class="net-amt">${this.inr(net)}</div>
+                <div class="net-sub">Total Net Pay</div>
+              </div>
+            </div>
+          </div>
+          <div class="net-days">
+            <table>
+              <tr><td>Paid Days</td><td class="c">:</td><td class="n">${paidDays}</td></tr>
+              <tr><td>LOP Days</td><td class="c">:</td><td class="n">${lopDays}</td></tr>
+            </table>
+          </div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <table class="panel">
     <thead>
       <tr>
         <th>EARNINGS</th><th class="num">AMOUNT</th>
         <th>DEDUCTIONS</th><th class="num">AMOUNT</th>
       </tr>
     </thead>
-    <tbody>${bodyRows}</tbody>
+    <tbody>
+      ${bodyRows}
+      <tr class="gross">
+        <td>Gross Earnings</td><td class="num">${this.inr(gross)}</td>
+        <td>Total Deductions</td><td class="num">${this.inr(totalDed)}</td>
+      </tr>
+    </tbody>
   </table>
-  <table class="totals">
+
+  <table class="payable">
     <tr>
-      <td>Gross Earnings</td><td class="num">${this.inr(gross)}</td>
-      <td>Total Deductions</td><td class="num">${this.inr(totalDed)}</td>
+      <td>
+        <div class="title">TOTAL NET PAYABLE</div>
+        <div class="sub">Gross Earnings - Total Deductions</div>
+      </td>
+      <td class="amt">${this.inr(net)}</td>
     </tr>
   </table>
 
-  <div class="payable">
-    <table><tr>
-      <td>
-        <div style="font-weight:800;letter-spacing:.03em;">TOTAL NET PAYABLE</div>
-        <div style="font-size:10px;opacity:.9;margin-top:2px;">Gross Earnings − Total Deductions</div>
-      </td>
-      <td class="big">${this.inr(net)}</td>
-    </tr></table>
-  </div>
-  <div class="words"><strong>Amount in words:</strong> ${escapeHtml(inrWords(net))}</div>
-  ${notes.trim() ? `<div class="words"><strong>Notes:</strong> ${escapeHtml(notes.trim())}</div>` : ''}
-
-  <table class="stamps">
-    <tr>
-      <td>
-        <div class="stamp-label">Employer stamp &amp; authorised signatory</div>
-        <div class="stamp-box"></div>
-        <div class="stamp-hint">Affix company stamp and sign</div>
-      </td>
-      <td>
-        <div class="stamp-label">Employee acknowledgement</div>
-        <div class="stamp-box"></div>
-        <div class="stamp-hint">Signature</div>
-      </td>
-    </tr>
-  </table>
-  <div class="foot">— This is a system-generated document. —</div>
+  <div class="words">Amount In Words : ${escapeHtml(inrWords(net))}</div>
+  <div class="rule"></div>
+  ${notes.trim() ? `<div class="notes">${escapeHtml(notes.trim())}</div>` : ''}
+  <div class="foot">-- This is a system-generated document. --</div>
 </body>
 </html>`;
   }
@@ -346,7 +421,9 @@ function inrWords(amount: number): string {
   const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
   const two = (num: number): string => {
     if (num < 20) return ones[num];
-    return `${tens[Math.floor(num / 10)]}${num % 10 ? ' ' + ones[num % 10] : ''}`.trim();
+    const ten = tens[Math.floor(num / 10)];
+    const one = ones[num % 10];
+    return one ? `${ten}-${one}` : ten;
   };
   const parts: string[] = [];
   const crore = Math.floor(n / 10000000);

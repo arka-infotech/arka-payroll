@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:arka_payroll/core/theme/arka_theme.dart';
 
 /// Primary floating action — consistent placement and styling.
 class ArkaAddFab extends StatelessWidget {
@@ -17,23 +16,12 @@ class ArkaAddFab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8, right: 4),
-      child: FloatingActionButton.extended(
-        elevation: 2,
-        highlightElevation: 4,
-        backgroundColor: scheme.secondary,
-        foregroundColor: Colors.white,
-        extendedPadding: const EdgeInsets.symmetric(horizontal: 20),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        onPressed: onPressed,
-        icon: Icon(icon, size: 22),
-        label: Text(
-          label,
-          style: const TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.2),
-        ),
-      ),
+    return FloatingActionButton.extended(
+      heroTag: label,
+      extendedPadding: const EdgeInsets.symmetric(horizontal: 20),
+      onPressed: onPressed,
+      icon: Icon(icon, size: 22),
+      label: Text(label),
     ).animate().fadeIn(duration: 320.ms).scale(
           begin: const Offset(0.92, 0.92),
           end: const Offset(1, 1),
@@ -43,62 +31,33 @@ class ArkaAddFab extends StatelessWidget {
   }
 }
 
-/// Standard page padding for scrollable content inside [AppScaffold].
+/// Standard page padding for content inside [AppScaffold].
+///
+/// Horizontal values match the desktop page header so titles and content
+/// share one left edge. Extra bottom space is only reserved when a FAB
+/// floats over the content.
 class ArkaPagePadding extends StatelessWidget {
-  const ArkaPagePadding({super.key, required this.child});
+  const ArkaPagePadding({super.key, required this.child, this.hasFab = false});
 
   final Widget child;
+  final bool hasFab;
 
-  static EdgeInsets of(BuildContext context) {
+  static double horizontal(BuildContext context) =>
+      MediaQuery.sizeOf(context).width >= 900 ? 28 : 16;
+
+  static EdgeInsets of(BuildContext context, {bool hasFab = false}) {
     final wide = MediaQuery.sizeOf(context).width >= 900;
+    final h = horizontal(context);
     return EdgeInsets.fromLTRB(
-      wide ? 20 : 16,
-      wide ? 16 : 12,
-      wide ? 20 : 16,
-      wide ? 28 : 96,
+      h,
+      wide ? 4 : 8,
+      h,
+      (wide ? 24 : 16) + (hasFab ? 72 : 0),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(padding: of(context), child: child);
-  }
-}
-
-/// Error banner for inline form / screen errors.
-class ArkaErrorBanner extends StatelessWidget {
-  const ArkaErrorBanner({super.key, required this.message, this.onDismiss});
-
-  final String message;
-  final VoidCallback? onDismiss;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: ArkaColors.warning.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Icon(Icons.error_outline, color: ArkaColors.warning, size: 22),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                message,
-                style: const TextStyle(height: 1.35, fontWeight: FontWeight.w500),
-              ),
-            ),
-            if (onDismiss != null)
-              IconButton(
-                onPressed: onDismiss,
-                icon: const Icon(Icons.close, size: 18),
-                visualDensity: VisualDensity.compact,
-              ),
-          ],
-        ),
-      ),
-    ).animate().fadeIn(duration: 220.ms).slideY(begin: -0.05, end: 0);
+    return Padding(padding: of(context, hasFab: hasFab), child: child);
   }
 }

@@ -7,6 +7,7 @@ import 'package:arka_payroll/presentation/employee/employee_slips_screen.dart';
 import 'package:arka_payroll/presentation/hr/add_user_screen.dart';
 import 'package:arka_payroll/presentation/hr/dashboard_screen.dart';
 import 'package:arka_payroll/presentation/hr/edit_slip_screen.dart';
+import 'package:arka_payroll/presentation/hr/edit_user_screen.dart';
 import 'package:arka_payroll/presentation/hr/employees_screen.dart';
 import 'package:arka_payroll/presentation/hr/punch_salary_screen.dart';
 import 'package:arka_payroll/presentation/hr/hr_payslips_screen.dart';
@@ -68,7 +69,13 @@ GoRouter createRouter(AuthState auth, SplashGate splash) {
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/dashboard', builder: (_, __) => const DashboardScreen()),
       GoRoute(path: '/employees', builder: (_, __) => const EmployeesScreen()),
-      GoRoute(path: '/employees/add', builder: (_, __) => const AddUserScreen()),
+      GoRoute(
+          path: '/employees/add', builder: (_, __) => const AddUserScreen()),
+      GoRoute(
+        path: '/employees/:id/edit',
+        builder: (context, state) =>
+            EditUserScreen(userId: state.pathParameters['id']!),
+      ),
       GoRoute(
         path: '/punch',
         builder: (context, state) {
@@ -83,7 +90,8 @@ GoRouter createRouter(AuthState auth, SplashGate splash) {
       GoRoute(path: '/payslips', builder: (_, __) => const HrPayslipsScreen()),
       GoRoute(path: '/reports', builder: (_, __) => const ReportsScreen()),
       GoRoute(path: '/admin', builder: (_, __) => const AdminConsoleScreen()),
-      GoRoute(path: '/my-slips', builder: (_, __) => const EmployeeSlipsScreen()),
+      GoRoute(
+          path: '/my-slips', builder: (_, __) => const EmployeeSlipsScreen()),
       GoRoute(
         path: '/slip/:id/edit',
         builder: (context, state) =>

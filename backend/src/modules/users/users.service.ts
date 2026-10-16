@@ -13,6 +13,7 @@ import { Role } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AppRole } from '../../common/enums/role.enum';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
+import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { UpsertSalaryStructureDto } from './dto/upsert-salary-structure.dto';
 import { AuditService } from '../audit/audit.service';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
@@ -130,19 +131,17 @@ export class UsersService {
         email,
         passwordHash,
         role: dto.role as Role,
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        employeeCode: dto.employeeCode,
-        designation: dto.designation,
-        dateOfJoining: dto.dateOfJoining
-          ? new Date(dto.dateOfJoining)
-          : undefined,
-        pan: dto.pan,
-        aadhaar: dto.aadhaar,
-        uan: dto.uan,
-        bankName: dto.bankName,
-        bankAccountNumber: dto.bankAccountNumber,
-        bankIfsc: dto.bankIfsc,
+        firstName: dto.firstName.trim(),
+        lastName: dto.lastName.trim(),
+        employeeCode: normalizeEmployeeCode(dto.employeeCode),
+        designation: dto.designation.trim(),
+        dateOfJoining: new Date(dto.dateOfJoining),
+        pan: dto.pan.trim().toUpperCase(),
+        aadhaar: asNa(dto.aadhaar),
+        uan: asNa(dto.uan),
+        bankName: dto.bankName.trim(),
+        bankAccountNumber: dto.bankAccountNumber.trim(),
+        bankIfsc: dto.bankIfsc.trim().toUpperCase(),
         createdById: actor.sub,
       },
       select: USER_HR_SELECT,
@@ -159,6 +158,77 @@ export class UsersService {
     });
 
     return created;
+  }
+
+  async updateEmployee(
+    userId: string,
+    dto: UpdateEmployeeDto,
+    actor: JwtPayload,
+  ) {
+    const existing = await this.findVisibleById(userId, actor);
+
+    if (dto.role === (AppRole.SUPER_ADMIN as string)) {
+      throw new BadRequestException(
+        'SUPER_ADMIN cannot be assigned via API — seed only',
+      );
+    }
+
+    let email = existing.email;
+    if (dto.email !== undefined) {
+      email = dto.email.toLowerCase().trim();
+      if (email !== existing.email) {
+        const clash = await this.prisma.user.findUnique({ where: { email } });
+        if (clash) {
+          throw new ConflictException('Email already registered');
+        }
+      }
+    }
+
+    const data: Record<string, unknown> = {};
+    if (dto.email !== undefined) data.email = email;
+    if (dto.firstName !== undefined) data.firstName = dto.firstName.trim();
+    if (dto.lastName !== undefined) data.lastName = dto.lastName.trim();
+    if (dto.employeeCode !== undefined) {
+      data.employeeCode = normalizeEmployeeCode(dto.employeeCode);
+    }
+    if (dto.designation !== undefined) {
+      data.designation = dto.designation.trim();
+    }
+    if (dto.dateOfJoining !== undefined) {
+      data.dateOfJoining = new Date(dto.dateOfJoining);
+    }
+    if (dto.role !== undefined) data.role = dto.role as Role;
+    if (dto.pan !== undefined) data.pan = dto.pan.trim().toUpperCase();
+    if (dto.aadhaar !== undefined) data.aadhaar = asNa(dto.aadhaar);
+    if (dto.uan !== undefined) data.uan = asNa(dto.uan);
+    if (dto.bankName !== undefined) data.bankName = dto.bankName.trim();
+    if (dto.bankAccountNumber !== undefined) {
+      data.bankAccountNumber = dto.bankAccountNumber.trim();
+    }
+    if (dto.bankIfsc !== undefined) {
+      data.bankIfsc = dto.bankIfsc.trim().toUpperCase();
+    }
+    if (dto.password !== undefined && dto.password.trim().length > 0) {
+      data.passwordHash = await bcrypt.hash(dto.password, 12);
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data,
+      select: USER_HR_SELECT,
+    });
+
+    await this.audit.write({
+      actorId: actor.sub,
+      actorEmail: actor.email,
+      actorRole: actor.role,
+      action: 'USER_UPDATE',
+      entity: 'user',
+      entityId: updated.id,
+      summary: `Updated profile ${updated.email}`,
+    });
+
+    return updated;
   }
 
   async upsertSalaryStructure(
@@ -266,7 +336,7 @@ export class UsersService {
     actor: JwtPayload,
   ) {
     if (actor.role !== AppRole.SUPER_ADMIN) {
-      throw new ForbiddenException('Only Super Admin can ban users');
+      throw new ForbiddenException('You do not have permission to ban users');
     }
     const user = await this.findVisibleById(userId, actor);
     const updated = await this.prisma.user.update({
@@ -274,7 +344,7 @@ export class UsersService {
       data: {
         status: 'BANNED',
         bannedAt: new Date(),
-        bannedReason: reason ?? 'Banned by Super Admin',
+        bannedReason: reason ?? 'Banned by an administrator',
       },
       select: USER_SUPER_SELECT,
     });
@@ -293,7 +363,7 @@ export class UsersService {
 
   async unbanUser(userId: string, actor: JwtPayload) {
     if (actor.role !== AppRole.SUPER_ADMIN) {
-      throw new ForbiddenException('Only Super Admin can unban users');
+      throw new ForbiddenException('You do not have permission to unban users');
     }
     const updated = await this.prisma.user.update({
       where: { id: userId },
@@ -319,7 +389,7 @@ export class UsersService {
   /** Super Admin only — hard remove (non–Super Admin). */
   async removeUser(userId: string, actor: JwtPayload) {
     if (actor.role !== AppRole.SUPER_ADMIN) {
-      throw new ForbiddenException('Only Super Admin can remove users');
+      throw new ForbiddenException('You do not have permission to remove users');
     }
     const user = await this.findVisibleById(userId, actor);
     await this.prisma.user.delete({ where: { id: userId } });
@@ -341,4 +411,18 @@ export class UsersService {
       data: { lastSeenAt: new Date() },
     });
   }
+}
+
+/** Empty optional text becomes N/A on the profile. */
+function asNa(value?: string | null): string {
+  const t = value?.trim();
+  return t && t.length > 0 ? t : 'N/A';
+}
+
+function normalizeEmployeeCode(code: string): string {
+  const t = code.trim().toUpperCase();
+  if (!t.startsWith('AISS')) {
+    throw new BadRequestException('Employee ID must start with AISS');
+  }
+  return t;
 }

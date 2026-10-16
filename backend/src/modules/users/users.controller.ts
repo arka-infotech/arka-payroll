@@ -5,12 +5,14 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Put,
   UseGuards,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
+import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { UpsertSalaryStructureDto } from './dto/upsert-salary-structure.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -52,6 +54,16 @@ export class UsersController {
   @Roles(AppRole.HR_ADMIN, AppRole.SUPER_ADMIN)
   create(@Body() dto: CreateEmployeeDto, @CurrentUser() user: JwtPayload) {
     return this.usersService.createEmployee(dto, user);
+  }
+
+  @Patch(':id')
+  @Roles(AppRole.HR_ADMIN, AppRole.SUPER_ADMIN)
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateEmployeeDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.usersService.updateEmployee(id, dto, user);
   }
 
   @Put(':id/salary-structure')

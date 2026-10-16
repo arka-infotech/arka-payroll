@@ -12,7 +12,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
-import { IsString, MinLength } from 'class-validator';
 import { PayrollService } from './payroll.service';
 import { ProcessPayrollDto } from './dto/process-payroll.dto';
 import { UpdateSlipDocumentDto } from './dto/update-slip-document.dto';
@@ -22,12 +21,6 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { AppRole } from '../../common/enums/role.enum';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
-
-class UnlockPayrollDto extends ProcessPayrollDto {
-  @IsString()
-  @MinLength(8)
-  superAdminPassword!: string;
-}
 
 @Controller('payroll')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -84,15 +77,6 @@ export class PayrollController {
     return this.payrollService.processMonthly(dto, user);
   }
 
-  /** Overwrite a LOCKED slip — requires Super Admin password. */
-  @Post('unlock-reprocess')
-  @Roles(AppRole.HR_ADMIN, AppRole.SUPER_ADMIN)
-  unlockReprocess(
-    @Body() dto: UnlockPayrollDto,
-    @CurrentUser() user: JwtPayload,
-  ) {
-    return this.payrollService.unlockAndReprocess(dto, user);
-  }
 
   @Post('process-batch')
   @Roles(AppRole.HR_ADMIN, AppRole.SUPER_ADMIN)

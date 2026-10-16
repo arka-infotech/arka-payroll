@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:arka_payroll/core/network/api_errors.dart';
 import 'package:arka_payroll/data/auth/auth_repository.dart';
 import 'package:arka_payroll/domain/models/user_model.dart';
 
@@ -21,9 +22,8 @@ class AuthState extends ChangeNotifier {
     }
     try {
       user = await _repo.refreshMe();
-      status = user != null
-          ? AuthStatus.authenticated
-          : AuthStatus.unauthenticated;
+      status =
+          user != null ? AuthStatus.authenticated : AuthStatus.unauthenticated;
     } catch (_) {
       await _repo.logout();
       status = AuthStatus.unauthenticated;
@@ -42,7 +42,7 @@ class AuthState extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      error = e.toString();
+      error = apiErrorMessage(e);
       status = AuthStatus.unauthenticated;
       busy = false;
       notifyListeners();

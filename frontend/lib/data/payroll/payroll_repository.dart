@@ -66,19 +66,20 @@ class PayrollGridRow {
       bankIfsc: json['bankIfsc'] as String?,
       email: json['email'] as String?,
       hasStructure: json['hasStructure'] as bool? ?? false,
-      monthlyCtc: json['monthlyCtc'] as num?,
-      calendarDaysInMonth: (json['calendarDaysInMonth'] as num?)?.toInt() ?? 30,
+      monthlyCtc: json['monthlyCtc'] == null
+          ? null
+          : parseApiNum(json['monthlyCtc']),
+      calendarDaysInMonth:
+          parseApiNum(json['calendarDaysInMonth'], fallback: 30).toInt(),
       existingPayrollId: existing?['id'] as String?,
       existingStatus: existing?['status'] as String?,
-      unpaidLeaveDays: (existing?['unpaidLeaveDays'] as num?)?.toInt() ?? 0,
-      bonus: (existing?['bonus'] as num?)?.toDouble() ?? 0,
-      specialAdjustment:
-          (existing?['specialAdjustment'] as num?)?.toDouble() ?? 0,
-      otherEarnings: (existing?['otherEarnings'] as num?)?.toDouble() ?? 0,
-      workingDaysInMonth:
-          (existing?['workingDaysInMonth'] as num?)?.toInt() ??
-              (json['calendarDaysInMonth'] as num?)?.toInt() ??
-              30,
+      unpaidLeaveDays: parseApiNum(existing?['unpaidLeaveDays']).toInt(),
+      bonus: parseApiNum(existing?['bonus']).toDouble(),
+      specialAdjustment: parseApiNum(existing?['specialAdjustment']).toDouble(),
+      otherEarnings: parseApiNum(existing?['otherEarnings']).toDouble(),
+      workingDaysInMonth: existing?['workingDaysInMonth'] != null
+          ? parseApiNum(existing?['workingDaysInMonth']).toInt()
+          : parseApiNum(json['calendarDaysInMonth'], fallback: 30).toInt(),
       slipNotes: existing?['slipNotes'] as String?,
     );
   }
@@ -246,33 +247,6 @@ class PayrollRepository {
     }) as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> unlockAndReprocess({
-    required String userId,
-    required int year,
-    required int month,
-    required int workingDaysInMonth,
-    required int unpaidLeaveDays,
-    required double bonus,
-    required double specialAdjustment,
-    required double otherEarnings,
-    required String superAdminPassword,
-    String? slipNotes,
-  }) async {
-    return await _auth.api.post('/payroll/unlock-reprocess', body: {
-      'userId': userId,
-      'year': year,
-      'month': month,
-      'workingDaysInMonth': workingDaysInMonth,
-      'unpaidLeaveDays': unpaidLeaveDays,
-      'bonus': bonus,
-      'specialAdjustment': specialAdjustment,
-      'otherEarnings': otherEarnings,
-      'superAdminPassword': superAdminPassword,
-      if (slipNotes != null && slipNotes.trim().isNotEmpty)
-        'slipNotes': slipNotes.trim(),
-    }) as Map<String, dynamic>;
-  }
-
   Future<List<PeriodSlipRow>> fetchPeriodSlips(int year, int month) async {
     final data = await _auth.api.get(
       '/payroll/period',
@@ -323,8 +297,22 @@ class PayrollRepository {
     return data.cast<Map<String, dynamic>>();
   }
 
+  Future<Map<String, dynamic>> fetchUser(String userId) async {
+    return await _auth.api.get('/users/$userId') as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> createUser(Map<String, dynamic> body) async {
     return await _auth.api.post('/users', body: body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateUser(
+    String userId,
+    Map<String, dynamic> body,
+  ) async {
+    return await _auth.api.patch(
+      '/users/$userId',
+      body: body,
+    ) as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> upsertSalaryStructure(

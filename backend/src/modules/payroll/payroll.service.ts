@@ -2,11 +2,11 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
-  UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PayrollStatus, Prisma, Role } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AppRole } from '../../common/enums/role.enum';
@@ -20,18 +20,39 @@ import {
 import { toNumber } from './domain/money.util';
 import { PdfSlipService } from './pdf-slip.service';
 import { AuditService } from '../audit/audit.service';
+import { MailService } from '../mail/mail.service';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import {
   canManageUser,
   visibleUsersWhere,
 } from '../users/user-visibility.util';
 
+const MONTH_LABELS = [
+  '',
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
 @Injectable()
 export class PayrollService {
+  private readonly logger = new Logger(PayrollService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly pdfSlip: PdfSlipService,
     private readonly audit: AuditService,
+    private readonly config: ConfigService,
+    private readonly mail: MailService,
   ) {}
 
   async dashboardStats() {
@@ -115,7 +136,7 @@ export class PayrollService {
 
   /**
    * Process + auto-LOCK for tax reporting integrity.
-   * Locked months require Super Admin password to overwrite.
+   * Re-locking an already locked month simply updates the slip.
    */
   async processMonthly(dto: ProcessPayrollDto, actor: JwtPayload) {
     const maxDays = daysInMonth(dto.year, dto.month);
@@ -187,7 +208,7 @@ export class PayrollService {
         calculationSnapshot: computed.snapshot as Prisma.InputJsonValue,
         slipNotes: dto.slipNotes?.trim() || null,
         payDate: creditDate(dto.year, dto.month, user.salaryStructure?.salaryCreditDay),
-        slipDocument: Prisma.DbNull,
+        slipDocument: this.brandingDocument(existing?.slipDocument),
       };
 
       if (existing) {
@@ -218,49 +239,38 @@ export class PayrollService {
       summary: `Locked payroll ${trackingReference} net ₹${computed.netPay}`,
     });
 
+    void this.emailLockedSlip(row.id, actor).catch((err) => {
+      const detail = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Payslip email failed for ${row.id}: ${detail}`);
+    });
+
     return row;
   }
 
-  /**
-   * Unlock a locked slip after verifying Super Admin password,
-   * then optionally reprocess with the same payload.
-   */
-  async unlockAndReprocess(
-    dto: ProcessPayrollDto & { superAdminPassword: string },
+  /** Best-effort email after lock — never blocks payroll confirmation. */
+  private async emailLockedSlip(
+    payrollId: string,
     actor: JwtPayload,
-  ) {
-    const ok = await this.verifySuperAdminPassword(dto.superAdminPassword);
-    if (!ok) {
-      throw new UnauthorizedException('Invalid Super Admin credentials');
+  ): Promise<void> {
+    if (!this.mail.isConfigured()) return;
+
+    const slip = await this.getSlipMeta(payrollId, actor);
+    const to = slip.user.email?.trim();
+    if (!to) {
+      this.logger.warn(`No employee email for payroll ${payrollId}`);
+      return;
     }
 
-    const existing = await this.prisma.monthlyPayroll.findUnique({
-      where: {
-        userId_year_month: {
-          userId: dto.userId,
-          year: dto.year,
-          month: dto.month,
-        },
-      },
+    const { buffer, filename } = await this.generatePdfBuffer(payrollId, actor);
+    const periodLabel = `${MONTH_LABELS[slip.month]} ${slip.year}`;
+    await this.mail.sendPayslipPdf({
+      to,
+      employeeName: `${slip.user.firstName} ${slip.user.lastName}`.trim(),
+      periodLabel,
+      trackingReference: slip.trackingReference,
+      pdf: buffer,
+      filename,
     });
-
-    if (existing) {
-      await this.prisma.monthlyPayroll.update({
-        where: { id: existing.id },
-        data: { status: PayrollStatus.DRAFT },
-      });
-      await this.audit.write({
-        actorId: actor.sub,
-        actorEmail: actor.email,
-        actorRole: actor.role,
-        action: 'PAYROLL_UNLOCK',
-        entity: 'monthly_payroll',
-        entityId: existing.id,
-        summary: `Unlocked payroll ${existing.trackingReference} via Super Admin auth`,
-      });
-    }
-
-    return this.processMonthly(dto, actor);
   }
 
   async processBatch(
@@ -491,7 +501,11 @@ export class PayrollService {
       >['salaryStructure'];
     },
     dto: ProcessPayrollDto,
-    existing: { id: string; trackingReference: string } | null,
+    existing: {
+      id: string;
+      trackingReference: string;
+      slipDocument?: Prisma.JsonValue | null;
+    } | null,
     resetDocument = false,
   ) {
     const structure = this.structureForCompute(user.salaryStructure!);
@@ -538,6 +552,9 @@ export class PayrollService {
       processedBy: null,
       calculationSnapshot: computed.snapshot as Prisma.InputJsonValue,
       slipNotes: dto.slipNotes?.trim() || null,
+      ...(!existing?.slipDocument
+        ? { slipDocument: this.brandingDocument(null) }
+        : {}),
       ...(resetDocument
         ? {
             payDate: creditDate(
@@ -545,7 +562,7 @@ export class PayrollService {
               dto.month,
               user.salaryStructure?.salaryCreditDay,
             ),
-            slipDocument: Prisma.DbNull,
+            slipDocument: this.brandingDocument(existing?.slipDocument),
           }
         : {}),
     };
@@ -569,8 +586,30 @@ export class PayrollService {
           dto.month,
           user.salaryStructure?.salaryCreditDay,
         ),
+        slipDocument: this.brandingDocument(null),
       },
     });
+  }
+
+  /** Company name and address stored on the slip so later edits keep this format. */
+  private brandingDocument(existing: Prisma.JsonValue | null | undefined): Prisma.InputJsonValue {
+    const prev =
+      existing && typeof existing === 'object' && !Array.isArray(existing)
+        ? (existing as Record<string, unknown>)
+        : {};
+    const savedName = typeof prev.companyName === 'string' ? prev.companyName.trim() : '';
+    const savedLocation = typeof prev.location === 'string' ? prev.location.trim() : '';
+    return {
+      companyName:
+        savedName ||
+        this.config.get<string>('COMPANY_NAME', 'Arka Infotech Software Solutions'),
+      location:
+        savedLocation ||
+        this.config.get<string>(
+          'COMPANY_ADDRESS',
+          'Office .no 512, Suchita Business Park, Patel chowk, opposite Hanuman temple, Shival Nagar, Saibaba Nagar, Pant Nagar, Ghatkopar East, Mumbai, Maharashtra 400077',
+        ),
+    };
   }
 
   async updateSlipDocument(
@@ -597,6 +636,15 @@ export class PayrollService {
     );
     const net = roundMoney(gross - totalDeductions);
     const document = {
+      companyName:
+        dto.companyName?.trim() ||
+        this.config.get<string>('COMPANY_NAME', 'Arka Infotech Software Solutions'),
+      location:
+        dto.location?.trim() ||
+        this.config.get<string>(
+          'COMPANY_ADDRESS',
+          'Office .no 512, Suchita Business Park, Patel chowk, opposite Hanuman temple, Shival Nagar, Saibaba Nagar, Pant Nagar, Ghatkopar East, Mumbai, Maharashtra 400077',
+        ),
       employeeName: dto.employeeName?.trim() || undefined,
       employeeCode: dto.employeeCode?.trim() || undefined,
       payDate: dto.payDate?.trim() || undefined,
@@ -730,14 +778,6 @@ export class PayrollService {
       );
     }
     return user;
-  }
-
-  private async verifySuperAdminPassword(password: string): Promise<boolean> {
-    const admin = await this.prisma.user.findFirst({
-      where: { role: Role.SUPER_ADMIN, status: 'ACTIVE' },
-    });
-    if (!admin) return false;
-    return bcrypt.compare(password, admin.passwordHash);
   }
 }
 

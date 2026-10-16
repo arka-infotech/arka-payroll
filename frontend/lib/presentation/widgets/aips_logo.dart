@@ -7,6 +7,7 @@ class AipsLogo extends StatelessWidget {
     super.key,
     this.height = 120,
     this.width,
+
     /// Force the dark-theme logo (silver mark) on a dark/navy background.
     this.onDarkBackground,
   });

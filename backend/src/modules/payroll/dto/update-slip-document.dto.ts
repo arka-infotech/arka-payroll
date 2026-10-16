@@ -24,6 +24,16 @@ export class SlipLineDto {
 export class UpdateSlipDocumentDto {
   @IsOptional()
   @IsString()
+  @MaxLength(160)
+  companyName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(400)
+  location?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(120)
   employeeName?: string;
 

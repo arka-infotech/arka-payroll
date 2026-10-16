@@ -1,733 +1,973 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
-import 'package:provider/provider.dart';
-import 'package:arka_payroll/core/network/api_client.dart';
-import 'package:arka_payroll/core/network/api_errors.dart';
 import 'package:arka_payroll/core/parse_api_num.dart';
 import 'package:arka_payroll/core/theme/arka_theme.dart';
 import 'package:arka_payroll/data/payroll/payroll_repository.dart';
 import 'package:arka_payroll/presentation/shell/app_scaffold.dart';
+import 'package:arka_payroll/presentation/widgets/arka_error_view.dart';
+import 'package:arka_payroll/presentation/widgets/arka_ui.dart';
+import 'package:arka_payroll/providers/app_providers.dart';
 
-class PunchSalaryScreen extends StatefulWidget {
-  const PunchSalaryScreen({super.key, this.initialUserId, this.initialYear, this.initialMonth});
+(ArkaTone, String) _rowStatus(PayrollGridRow r) {
+  if (r.isLocked) return (ArkaTone.success, 'Locked');
+  if (r.existingStatus == 'DRAFT') return (ArkaTone.warning, 'Draft');
+  if (!r.hasStructure) return (ArkaTone.danger, 'No pay package');
+  return (ArkaTone.info, 'Ready');
+}
+
+class PunchSalaryScreen extends ConsumerStatefulWidget {
+  const PunchSalaryScreen(
+      {super.key, this.initialUserId, this.initialYear, this.initialMonth});
 
   final String? initialUserId;
   final int? initialYear;
   final int? initialMonth;
 
   @override
-  State<PunchSalaryScreen> createState() => _PunchSalaryScreenState();
+  ConsumerState<PunchSalaryScreen> createState() => _PunchSalaryScreenState();
 }
 
-class _PunchSalaryScreenState extends State<PunchSalaryScreen> {
-  late int _year;
-  late int _month;
-  List<PayrollGridRow> _employees = [];
-  PayrollGridRow? _selected;
-  bool _loading = true;
+class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
+  String? _selectedId;
+
+  /// Copy server values into the form on the next data load (after a period
+  /// change or a save) — background refreshes never overwrite typing.
+  bool _resync = true;
   bool _busy = false;
-  String? _error;
+
+  /// A [String] for local validation, otherwise a thrown error.
+  Object? _formError;
   String? _daysWarning;
-  double? _liveLopEstimate;
 
   final _daysCtrl = TextEditingController();
   final _lopCtrl = TextEditingController(text: '0');
   final _bonusCtrl = TextEditingController(text: '0');
-  final _arrearsCtrl = TextEditingController(text: '0');
-  final _slipNotesCtrl = TextEditingController();
-  final _inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹');
+  final _otherCtrl = TextEditingController(text: '0');
+  final _notesCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now();
-    _year = widget.initialYear ?? now.year;
-    _month = widget.initialMonth ?? now.month;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    _selectedId = widget.initialUserId;
+    final y = widget.initialYear;
+    final m = widget.initialMonth;
+    if (y != null && m != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => ref.read(punchPeriodProvider.notifier).set(PayPeriod(y, m)),
+      );
+    }
   }
 
   @override
   void dispose() {
-    _daysCtrl.dispose();
-    _lopCtrl.dispose();
-    _bonusCtrl.dispose();
-    _arrearsCtrl.dispose();
-    _slipNotesCtrl.dispose();
+    for (final c in [_daysCtrl, _lopCtrl, _bonusCtrl, _otherCtrl, _notesCtrl]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final rows =
-          await context.read<PayrollRepository>().fetchGrid(_year, _month);
-      setState(() {
-        _employees = rows;
-        final deepLink = widget.initialUserId;
-        _selected = rows.isEmpty
-            ? null
-            : rows.firstWhere(
-                (e) =>
-                    e.userId ==
-                    (deepLink ?? _selected?.userId ?? rows.first.userId),
-                orElse: () => rows.first,
-              );
-        _syncFieldsFromSelected();
-        _loading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
+  PayPeriod get _period => ref.read(punchPeriodProvider);
+
+  void _applyRows(List<PayrollGridRow> rows) {
+    if (!mounted || rows.isEmpty) return;
+    final current = rows.where((r) => r.userId == _selectedId).firstOrNull;
+    if (current == null) {
+      _select(rows.first);
+    } else if (_resync) {
+      _select(current);
     }
   }
 
-  void _syncFieldsFromSelected() {
-    final s = _selected;
-    if (s == null) return;
+  void _select(PayrollGridRow s) {
+    _resync = false;
+    _selectedId = s.userId;
+    _formError = null;
     _daysCtrl.text = '${s.workingDaysInMonth}';
     _lopCtrl.text = '${s.unpaidLeaveDays}';
     _bonusCtrl.text = s.bonus == 0 ? '0' : s.bonus.toStringAsFixed(0);
-    _arrearsCtrl.text =
+    _otherCtrl.text =
         s.otherEarnings == 0 ? '0' : s.otherEarnings.toStringAsFixed(0);
-    _slipNotesCtrl.text = s.slipNotes ?? '';
-    _validateDays();
-    _recalcLop();
+    _notesCtrl.text = s.slipNotes ?? '';
+    _validateDays(s);
+    if (mounted) setState(() {});
   }
 
-  void _validateDays() {
-    final s = _selected;
-    if (s == null) return;
+  void _validateDays(PayrollGridRow s) {
     final days = int.tryParse(_daysCtrl.text) ?? 0;
-    setState(() {
-      if (days > s.calendarDaysInMonth) {
-        _daysWarning =
-            'Exceeds ${_monthName(_month)} $_year capacity (${s.calendarDaysInMonth} days)';
-      } else {
-        _daysWarning = null;
-      }
-    });
+    _daysWarning = days > s.calendarDaysInMonth
+        ? 'Only ${s.calendarDaysInMonth} days in ${_period.label}'
+        : null;
   }
 
-  void _recalcLop() {
-    final s = _selected;
-    if (s == null || s.monthlyCtc == null) {
-      setState(() => _liveLopEstimate = null);
-      return;
-    }
+  double? _lopEstimate(PayrollGridRow s) {
+    if (s.monthlyCtc == null) return null;
     final days = int.tryParse(_daysCtrl.text) ?? 0;
     final lop = int.tryParse(_lopCtrl.text) ?? 0;
-    if (days <= 0) {
-      setState(() => _liveLopEstimate = 0);
-      return;
-    }
-    setState(() {
-      _liveLopEstimate = (s.monthlyCtc!.toDouble() * lop) / days;
-    });
+    if (days <= 0) return 0;
+    return s.monthlyCtc!.toDouble() * lop / days;
   }
 
   int? _workingDays() {
     final d = int.tryParse(_daysCtrl.text.trim());
-    if (d == null || d <= 0) return null;
-    return d;
+    return d == null || d <= 0 ? null : d;
   }
 
-  Future<void> _saveDraftOnly() async {
-    final s = _selected;
-    if (s == null) return;
+  void _changePeriod(PayPeriod p) {
+    _resync = true;
+    ref.read(punchPeriodProvider.notifier).set(p);
+  }
+
+  void _refreshAfterWrite() {
+    _resync = true;
+    invalidatePayrollData(ref);
+  }
+
+  Future<void> _saveDraft(PayrollGridRow s) async {
     final days = _workingDays();
     if (days == null) {
-      _toast('Enter valid days worked');
+      setState(() => _formError = 'Enter how many days were worked.');
       return;
     }
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _formError = null;
+    });
     try {
-      await context.read<PayrollRepository>().saveDraft(
+      await ref.read(payrollRepositoryProvider).saveDraft(
             userId: s.userId,
-            year: _year,
-            month: _month,
+            year: _period.year,
+            month: _period.month,
             workingDaysInMonth: days,
             unpaidLeaveDays: int.tryParse(_lopCtrl.text) ?? 0,
             bonus: double.tryParse(_bonusCtrl.text) ?? 0,
             specialAdjustment: 0,
-            otherEarnings: double.tryParse(_arrearsCtrl.text) ?? 0,
-            slipNotes: _slipNotesCtrl.text,
+            otherEarnings: double.tryParse(_otherCtrl.text) ?? 0,
+            slipNotes: _notesCtrl.text,
           );
-      _toast('Draft slip saved — editable until you lock');
-      await _load();
+      if (!mounted) return;
+      ArkaSnack.success(
+          context, 'Draft saved for ${s.name} — editable until you lock it');
+      _refreshAfterWrite();
     } catch (e) {
-      _toast(apiErrorMessage(e));
+      if (mounted) setState(() => _formError = e);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _preview() async {
-    final s = _selected;
-    if (s == null) return;
+  Future<void> _preview(PayrollGridRow s) async {
     if (!s.hasStructure) {
-      _toast('Pay package missing — add salary on People → user profile flow');
+      setState(() => _formError =
+          '${s.name} has no pay package yet. Add one from their profile first.');
       return;
     }
     final days = _workingDays();
     if (days == null) {
-      _toast('Enter valid days worked');
+      setState(() => _formError = 'Enter how many days were worked.');
       return;
     }
     if (_daysWarning != null) {
-      _toast(_daysWarning!);
+      setState(() => _formError = _daysWarning);
       return;
     }
-
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _formError = null;
+    });
     try {
-      final preview = await context.read<PayrollRepository>().preview(
+      final preview = await ref.read(payrollRepositoryProvider).preview(
             userId: s.userId,
-            year: _year,
-            month: _month,
+            year: _period.year,
+            month: _period.month,
             workingDaysInMonth: days,
             unpaidLeaveDays: int.tryParse(_lopCtrl.text) ?? 0,
             bonus: double.tryParse(_bonusCtrl.text) ?? 0,
             specialAdjustment: 0,
-            otherEarnings: double.tryParse(_arrearsCtrl.text) ?? 0,
-            slipNotes: _slipNotesCtrl.text,
+            otherEarnings: double.tryParse(_otherCtrl.text) ?? 0,
+            slipNotes: _notesCtrl.text,
           );
       if (!mounted) return;
       final confirmed = await showModalBottomSheet<bool>(
         context: context,
         isScrollControlled: true,
         useSafeArea: true,
-        builder: (ctx) => Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
-          child: _PreviewSheet(
-            preview: preview,
-            locked: s.isLocked,
-            inr: _inr,
-          ),
+        constraints: const BoxConstraints(maxWidth: 760),
+        builder: (_) => _PreviewSheet(
+          preview: preview,
+          locked: s.isLocked,
+          name: s.name,
+          period: _period,
         ),
       );
-      if (confirmed == true) {
-        await _submit(unlock: false);
-      }
+      if (confirmed == true) await _submit(s, days);
     } catch (e) {
-      _toast(apiErrorMessage(e));
+      if (mounted) setState(() => _formError = e);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _submit({required bool unlock}) async {
-    final s = _selected;
-    if (s == null) return;
-    final days = _workingDays();
-    if (days == null) {
-      _toast('Enter valid days worked');
-      return;
-    }
-    final repo = context.read<PayrollRepository>();
-    final slipNotes = _slipNotesCtrl.text.trim();
-    final payload = (
-      userId: s.userId,
-      year: _year,
-      month: _month,
-      workingDaysInMonth: days,
-      unpaidLeaveDays: int.tryParse(_lopCtrl.text) ?? 0,
-      bonus: double.tryParse(_bonusCtrl.text) ?? 0,
-      specialAdjustment: 0.0,
-      otherEarnings: double.tryParse(_arrearsCtrl.text) ?? 0,
-      slipNotes: slipNotes.isEmpty ? null : slipNotes,
-    );
-
+  Future<void> _submit(PayrollGridRow s, int days) async {
+    final notes = _notesCtrl.text.trim();
     try {
-      if (unlock) {
-        final pwd = await _askSuperAdminPassword();
-        if (pwd == null) return;
-        await repo.unlockAndReprocess(
-          userId: payload.userId,
-          year: payload.year,
-          month: payload.month,
-          workingDaysInMonth: payload.workingDaysInMonth,
-          unpaidLeaveDays: payload.unpaidLeaveDays,
-          bonus: payload.bonus,
-          specialAdjustment: payload.specialAdjustment,
-          otherEarnings: payload.otherEarnings,
-          superAdminPassword: pwd,
-          slipNotes: payload.slipNotes,
-        );
-      } else {
-        await repo.processOne(
-          userId: payload.userId,
-          year: payload.year,
-          month: payload.month,
-          workingDaysInMonth: payload.workingDaysInMonth,
-          unpaidLeaveDays: payload.unpaidLeaveDays,
-          bonus: payload.bonus,
-          specialAdjustment: payload.specialAdjustment,
-          otherEarnings: payload.otherEarnings,
-          slipNotes: payload.slipNotes,
-        );
-      }
-      _toast('Salary locked for ${s.name}');
-      await _load();
-    } on ApiException catch (e) {
-      if (e.message.contains('PAYROLL_LOCKED') ||
-          e.message.contains('LOCKED')) {
-        final pwd = await _askSuperAdminPassword();
-        if (pwd == null) return;
-        await repo.unlockAndReprocess(
-          userId: payload.userId,
-          year: payload.year,
-          month: payload.month,
-          workingDaysInMonth: payload.workingDaysInMonth,
-          unpaidLeaveDays: payload.unpaidLeaveDays,
-          bonus: payload.bonus,
-          specialAdjustment: payload.specialAdjustment,
-          otherEarnings: payload.otherEarnings,
-          superAdminPassword: pwd,
-          slipNotes: payload.slipNotes,
-        );
-        _toast('Unlocked & reprocessed with Super Admin approval');
-        await _load();
-      } else {
-        _toast(e.message);
-      }
+      // Re-locking a locked month just updates the existing slip.
+      await ref.read(payrollRepositoryProvider).processOne(
+            userId: s.userId,
+            year: _period.year,
+            month: _period.month,
+            workingDaysInMonth: days,
+            unpaidLeaveDays: int.tryParse(_lopCtrl.text) ?? 0,
+            bonus: double.tryParse(_bonusCtrl.text) ?? 0,
+            specialAdjustment: 0,
+            otherEarnings: double.tryParse(_otherCtrl.text) ?? 0,
+            slipNotes: notes.isEmpty ? null : notes,
+          );
+      if (!mounted) return;
+      ArkaSnack.success(
+        context,
+        s.isLocked
+            ? 'Slip updated for ${s.name}'
+            : 'Salary locked for ${s.name}',
+      );
+      _refreshAfterWrite();
     } catch (e) {
-      _toast(apiErrorMessage(e));
+      if (mounted) setState(() => _formError = e);
     }
   }
 
-  Future<String?> _askSuperAdminPassword() async {
-    final ctrl = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Super Admin approval required'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'This month is locked for tax reporting. Enter Super Admin password to overwrite.',
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'Super Admin password'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text),
-            child: const Text('Approve overwrite'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _toast(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-  }
-
-  Future<void> _downloadPdf(String payrollId, String ref) async {
+  Future<void> _downloadPdf(String payrollId) async {
     try {
       final bundle =
-          await context.read<PayrollRepository>().fetchPdfBundle(payrollId);
-      if (!mounted) return;
+          await ref.read(payrollRepositoryProvider).fetchPdfBundle(payrollId);
       await Printing.sharePdf(
-        bytes: Uint8List.fromList(bundle.bytes),
-        filename: bundle.filename,
-      );
+          bytes: Uint8List.fromList(bundle.bytes), filename: bundle.filename);
     } catch (e) {
-      _toast(apiErrorMessage(e));
+      if (mounted) ArkaSnack.error(context, e);
     }
   }
 
-  String _monthName(int m) => DateFormat.MMMM().format(DateTime(2020, m));
+  Future<void> _pickEmployee(List<PayrollGridRow> rows) async {
+    final picked = await showModalBottomSheet<PayrollGridRow>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.75,
+        maxChildSize: 0.95,
+        builder: (ctx, scroll) => _EmployeeList(
+          rows: rows,
+          selectedId: _selectedId,
+          onSelect: (r) => Navigator.pop(ctx, r),
+          scrollController: scroll,
+        ),
+      ),
+    );
+    if (picked != null) _select(picked);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width >= 960;
+    final period = ref.watch(punchPeriodProvider);
+    final grid = ref.watch(payrollGridProvider);
+    final wide = MediaQuery.sizeOf(context).width >= 1000;
+
+    final rows = grid.value ?? const <PayrollGridRow>[];
+    final selected = rows.where((r) => r.userId == _selectedId).firstOrNull;
+    if (rows.isNotEmpty && !grid.isLoading && (selected == null || _resync)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _applyRows(rows));
+    }
 
     return AppScaffold(
-      title: 'Punch Salary',
-      child: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text(_error!))
-              : Column(
-                  children: [
-                    _PeriodRow(
-                      year: _year,
-                      month: _month,
-                      onYear: (y) {
-                        setState(() => _year = y);
-                        _load();
-                      },
-                      onMonth: (m) {
-                        setState(() => _month = m);
-                        _load();
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: wide
-                          ? Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                SizedBox(width: 280, child: _employeeList()),
-                                const SizedBox(width: 16),
-                                Expanded(child: _formPane()),
-                              ],
-                            )
-                          : ListView(
-                              children: [
-                                SizedBox(height: 220, child: _employeeList()),
-                                const SizedBox(height: 12),
-                                _formPane(),
-                              ],
-                            ),
-                    ),
-                  ],
+      title: 'Punch salary',
+      subtitle: 'Attendance and variables for ${period.label}',
+      bottomBar: selected == null
+          ? null
+          : ArkaBottomBar(
+              children: [
+                OutlinedButton(
+                  onPressed: _busy ? null : () => _saveDraft(selected),
+                  child: const ArkaBusyLabel(
+                      busy: false,
+                      label: 'Save draft',
+                      icon: Icons.save_outlined),
                 ),
-    );
-  }
+                FilledButton(
+                  onPressed: _busy || !selected.hasStructure
+                      ? null
+                      : () => _preview(selected),
+                  child: ArkaBusyLabel(
+                    busy: _busy,
+                    label:
+                        selected.isLocked ? 'Recalculate' : 'Calculate & lock',
+                    icon: Icons.lock_outline_rounded,
+                  ),
+                ),
+              ],
+            ),
+      child: ArkaAsync<List<PayrollGridRow>>(
+        value: grid,
+        onRetry: () => ref.invalidate(payrollGridProvider),
+        data: (rows) {
+          final header = _Header(
+              period: period, rows: rows, onPeriod: _changePeriod, wide: wide);
+          if (rows.isEmpty) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                header,
+                const Expanded(
+                  child: ArkaEmptyState(
+                    icon: Icons.group_off_outlined,
+                    title: 'No one to pay yet',
+                    message:
+                        'Add employees with a pay package from People, then punch their salary here.',
+                  ),
+                ),
+              ],
+            );
+          }
+          final form =
+              selected == null ? const <Widget>[] : _form(selected, wide);
 
-  Widget _employeeList() {
-    return Card(
-      child: ListView.builder(
-        itemCount: _employees.length,
-        itemBuilder: (context, i) {
-          final e = _employees[i];
-          final selected = e.userId == _selected?.userId;
-          return ListTile(
-            selected: selected,
-            leading: CircleAvatar(
-              child: Text(e.name.isEmpty ? '?' : e.name[0]),
-            ),
-            title: Text(e.name),
-            subtitle: Text(
-              e.isLocked ? 'LOCKED' : (e.hasStructure ? 'Ready' : 'No structure'),
-              style: TextStyle(
-                color: e.isLocked
-                    ? ArkaColors.warning
-                    : e.hasStructure
-                        ? ArkaColors.success
-                        : Colors.redAccent,
-                fontSize: 12,
-              ),
-            ),
-            onTap: () {
-              setState(() {
-                _selected = e;
-                _syncFieldsFromSelected();
-              });
-            },
+          if (wide) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                header,
+                const SizedBox(height: 16),
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(
+                        width: 330,
+                        child: Card(
+                          clipBehavior: Clip.antiAlias,
+                          child: _EmployeeList(
+                              rows: rows,
+                              selectedId: _selectedId,
+                              onSelect: _select),
+                        ),
+                      ),
+                      const SizedBox(width: 20),
+                      Expanded(
+                          child: ListView(
+                              padding: const EdgeInsets.only(bottom: 24),
+                              children: form)),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }
+
+          return ListView(
+            padding: const EdgeInsets.only(bottom: 24),
+            children: [
+              header,
+              const SizedBox(height: 14),
+              if (selected != null)
+                _SelectedEmployee(
+                    row: selected,
+                    count: rows.length,
+                    onChange: () => _pickEmployee(rows)),
+              ...form,
+            ],
           );
         },
       ),
     );
   }
 
-  Widget _formPane() {
-    final s = _selected;
-    if (s == null) {
-      return const Card(
-        child: Center(child: Text('Select an employee to punch salary')),
-      );
-    }
+  /// Form blocks, each preceded by spacing so they slot into any list.
+  List<Widget> _form(PayrollGridRow s, bool wide) {
+    final lopEstimate = _lopEstimate(s);
+    final ctc = s.monthlyCtc?.toDouble();
+    final bonus = double.tryParse(_bonusCtrl.text) ?? 0;
+    final other = double.tryParse(_otherCtrl.text) ?? 0;
+    final amount = <TextInputFormatter>[
+      FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
+    ];
+    final (tone, status) = _rowStatus(s);
+    final error = _formError;
 
-    return Card(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              s.name,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-            Text(
-              s.designation ?? 'No designation',
-              style: const TextStyle(color: ArkaColors.muted),
-            ),
-            if (s.existingPayrollId != null) ...[
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: () => context.push('/slip/${s.existingPayrollId}'),
-                    icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
-                    label: const Text('View PDF'),
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: () => _downloadPdf(
-                      s.existingPayrollId!,
-                      'slip-${s.employeeCode ?? s.userId}',
+    final blocks = <Widget>[
+      if (wide)
+        ArkaCard(
+          child: Row(
+            children: [
+              ArkaAvatar(s.name, size: 52),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(s.name, style: context.tt.titleLarge),
+                    const SizedBox(height: 2),
+                    Text(
+                      [
+                        s.designation ?? 'No designation',
+                        if (s.employeeCode != null) s.employeeCode!
+                      ].join(' · '),
+                      style: context.tt.bodySmall,
                     ),
-                    icon: const Icon(Icons.download_outlined, size: 18),
-                    label: const Text('Download'),
-                  ),
-                ],
-              ),
-            ],
-            const SizedBox(height: 20),
-            Text('Monthly variables', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _daysCtrl,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(
-                labelText: 'Days worked',
-                helperText: 'Calendar capacity: ${s.calendarDaysInMonth}',
-                errorText: _daysWarning,
-              ),
-              onChanged: (_) {
-                _validateDays();
-                _recalcLop();
-              },
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _lopCtrl,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(
-                labelText: 'Unpaid leave days (LOP)',
-                helperText: _liveLopEstimate == null
-                    ? null
-                    : 'Estimated LOP deduction: ${_inr.format(_liveLopEstimate)}',
-              ),
-              onChanged: (_) => _recalcLop(),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _bonusCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Performance bonus / arrears',
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _arrearsCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Other earnings'),
-            ),
-            const SizedBox(height: 16),
-            Text('Slip details', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _slipNotesCtrl,
-              maxLines: 3,
-              maxLength: 500,
-              decoration: const InputDecoration(
-                labelText: 'Notes on PDF slip (optional)',
-                hintText: 'e.g. Reimbursement, leave balance, custom line…',
-                alignLabelWithHint: true,
-              ),
-            ),
-            if (s.isLocked) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: ArkaColors.warning.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: ArkaColors.warning.withValues(alpha: 0.35)),
-                ),
-                child: Text(
-                  'This month is already locked for ${s.name}. Saving or locking again updates the slip.',
-                  style: const TextStyle(color: ArkaColors.warning),
+                  ],
                 ),
               ),
+              ArkaStatusChip(status, tone: tone, dot: true),
+              if (s.existingPayrollId != null) ...[
+                const SizedBox(width: 12),
+                IconButton.outlined(
+                  tooltip: 'View slip',
+                  onPressed: () => context.push('/slip/${s.existingPayrollId}'),
+                  icon: const Icon(Icons.visibility_outlined),
+                ),
+                const SizedBox(width: 6),
+                IconButton.outlined(
+                  tooltip: 'Download PDF',
+                  onPressed: () => _downloadPdf(s.existingPayrollId!),
+                  icon: const Icon(Icons.download_rounded),
+                ),
+              ],
             ],
-            const SizedBox(height: 20),
-            OutlinedButton.icon(
-              onPressed: _busy ? null : _saveDraftOnly,
-              icon: const Icon(Icons.save_outlined),
-              label: const Text('Save draft slip'),
+          ),
+        ),
+      if (!wide && s.existingPayrollId != null)
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => context.push('/slip/${s.existingPayrollId}'),
+                icon: const Icon(Icons.visibility_outlined, size: 20),
+                label: const Text('View slip'),
+              ),
             ),
-            const SizedBox(height: 10),
-            FilledButton.icon(
-              onPressed: _busy ? null : _preview,
-              icon: _busy
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Icon(Icons.calculate_outlined),
-              label: const Text('Calculate & lock slip'),
+            const SizedBox(width: 10),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _downloadPdf(s.existingPayrollId!),
+                icon: const Icon(Icons.download_rounded, size: 20),
+                label: const Text('Download'),
+              ),
             ),
           ],
         ),
+      if (error != null)
+        error is String
+            ? ArkaInlineAlert(
+                message: error,
+                tone: ArkaAlertTone.warning,
+                onDismiss: () => setState(() => _formError = null),
+              )
+            : ArkaInlineAlert.fromError(error,
+                onDismiss: () => setState(() => _formError = null)),
+      if (!s.hasStructure)
+        ArkaInlineAlert(
+          tone: ArkaAlertTone.warning,
+          title: 'No pay package',
+          message:
+              'Set ${s.name}’s monthly salary before you can calculate and lock this slip.',
+          action: Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () async {
+                final saved =
+                    await context.push<bool>('/employees/${s.userId}/edit');
+                if (saved == true && mounted) _refreshAfterWrite();
+              },
+              icon: const Icon(Icons.edit_rounded, size: 18),
+              label: const Text('Open profile'),
+            ),
+          ),
+        ),
+      if (s.isLocked)
+        ArkaInlineAlert(
+          tone: ArkaAlertTone.info,
+          title: '${_period.label} is locked',
+          message: 'Saving or locking again updates the existing slip.',
+        ),
+      ArkaFormSection(
+        icon: Icons.event_available_rounded,
+        title: 'Attendance',
+        subtitle: '${s.calendarDaysInMonth} calendar days in ${_period.label}',
+        trailing: TextButton(
+          onPressed: () {
+            _daysCtrl.text = '${s.calendarDaysInMonth}';
+            _lopCtrl.text = '0';
+            setState(() => _validateDays(s));
+          },
+          child: const Text('Full month'),
+        ),
+        children: [
+          ArkaFieldRow(
+            breakpoint: 420,
+            children: [
+              TextField(
+                controller: _daysCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(2)
+                ],
+                decoration: InputDecoration(
+                    labelText: 'Days worked',
+                    suffixText: 'days',
+                    errorText: _daysWarning),
+                onChanged: (_) => setState(() => _validateDays(s)),
+              ),
+              TextField(
+                controller: _lopCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(2)
+                ],
+                decoration: InputDecoration(
+                  labelText: 'Unpaid leave (LOP)',
+                  suffixText: 'days',
+                  helperText: lopEstimate == null
+                      ? null
+                      : 'Deduction ≈ ${Fmt.inr(lopEstimate)}',
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+            ],
+          ),
+        ],
       ),
+      ArkaFormSection(
+        icon: Icons.add_card_rounded,
+        title: 'Additional earnings',
+        subtitle: 'One-off amounts for this month only',
+        children: [
+          ArkaFieldRow(
+            breakpoint: 420,
+            children: [
+              TextField(
+                controller: _bonusCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: amount,
+                decoration: const InputDecoration(
+                    labelText: 'Bonus / arrears', prefixText: '₹ '),
+                onChanged: (_) => setState(() {}),
+              ),
+              TextField(
+                controller: _otherCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: amount,
+                decoration: const InputDecoration(
+                    labelText: 'Other earnings', prefixText: '₹ '),
+                onChanged: (_) => setState(() {}),
+              ),
+            ],
+          ),
+        ],
+      ),
+      ArkaFormSection(
+        icon: Icons.sticky_note_2_outlined,
+        title: 'Note on payslip',
+        subtitle: 'Optional — printed at the bottom of the PDF',
+        children: [
+          TextField(
+            controller: _notesCtrl,
+            maxLines: 3,
+            maxLength: 500,
+            decoration: const InputDecoration(
+                hintText: 'e.g. Includes Diwali bonus, leave balance 4 days…'),
+          ),
+        ],
+      ),
+      if (ctc != null)
+        _EstimateCard(
+            monthly: ctc, lop: lopEstimate ?? 0, extras: bonus + other),
+    ];
+
+    return [
+      for (var i = 0; i < blocks.length; i++) ...[
+        if (i > 0 || !wide) const SizedBox(height: 14),
+        blocks[i],
+      ],
+    ];
+  }
+}
+
+class _Header extends StatelessWidget {
+  const _Header(
+      {required this.period,
+      required this.rows,
+      required this.onPeriod,
+      required this.wide});
+
+  final PayPeriod period;
+  final List<PayrollGridRow> rows;
+  final ValueChanged<PayPeriod> onPeriod;
+  final bool wide;
+
+  @override
+  Widget build(BuildContext context) {
+    int count(String label) =>
+        rows.where((r) => _rowStatus(r).$2 == label).length;
+    final missing = count('No pay package');
+    final chips = [
+      ArkaStatusChip('${count('Locked')} locked',
+          tone: ArkaTone.success, dot: true),
+      ArkaStatusChip('${count('Draft')} drafts',
+          tone: ArkaTone.warning, dot: true),
+      ArkaStatusChip('${count('Ready')} ready', tone: ArkaTone.info, dot: true),
+      if (missing > 0)
+        ArkaStatusChip('$missing need pay package',
+            tone: ArkaTone.danger, dot: true),
+    ];
+    final switcher = ArkaMonthSwitcher(period: period, onChanged: onPeriod);
+
+    if (wide) {
+      return Row(
+        children: [
+          SizedBox(width: 330, child: switcher),
+          const SizedBox(width: 20),
+          Expanded(child: Wrap(spacing: 8, runSpacing: 8, children: chips)),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 8),
+        switcher,
+        const SizedBox(height: 12),
+        Wrap(spacing: 8, runSpacing: 8, children: chips),
+      ],
     );
   }
 }
 
-class _PeriodRow extends StatelessWidget {
-  const _PeriodRow({
-    required this.year,
-    required this.month,
-    required this.onYear,
-    required this.onMonth,
+class _EmployeeList extends StatefulWidget {
+  const _EmployeeList({
+    required this.rows,
+    required this.selectedId,
+    required this.onSelect,
+    this.scrollController,
   });
 
-  final int year;
-  final int month;
-  final ValueChanged<int> onYear;
-  final ValueChanged<int> onMonth;
+  final List<PayrollGridRow> rows;
+  final String? selectedId;
+  final ValueChanged<PayrollGridRow> onSelect;
+  final ScrollController? scrollController;
+
+  @override
+  State<_EmployeeList> createState() => _EmployeeListState();
+}
+
+class _EmployeeListState extends State<_EmployeeList> {
+  String _q = '';
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final q = _q.trim().toLowerCase();
+    final list = q.isEmpty
+        ? widget.rows
+        : widget.rows
+            .where((r) =>
+                '${r.name} ${r.employeeCode ?? ''} ${r.designation ?? ''}'
+                    .toLowerCase()
+                    .contains(q))
+            .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
-          child: DropdownButtonFormField<int>(
-            initialValue: year,
-            decoration: const InputDecoration(labelText: 'Year'),
-            items: [
-              for (var y = DateTime.now().year - 2; y <= DateTime.now().year + 1; y++)
-                DropdownMenuItem(value: y, child: Text('$y')),
-            ],
-            onChanged: (v) {
-              if (v != null) onYear(v);
-            },
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+          child: TextField(
+            onChanged: (v) => setState(() => _q = v),
+            decoration: const InputDecoration(
+              hintText: 'Search employees',
+              prefixIcon: Icon(Icons.search_rounded),
+              contentPadding: EdgeInsets.symmetric(vertical: 12),
+            ),
           ),
         ),
-        const SizedBox(width: 12),
         Expanded(
-          child: DropdownButtonFormField<int>(
-            initialValue: month,
-            decoration: const InputDecoration(labelText: 'Month'),
-            items: [
-              for (var m = 1; m <= 12; m++)
-                DropdownMenuItem(
-                  value: m,
-                  child: Text(DateFormat.MMMM().format(DateTime(2020, m))),
+          child: list.isEmpty
+              ? const ArkaEmptyState(
+                  icon: Icons.search_off_rounded,
+                  title: 'No matches',
+                  message: 'Try another name or ID.')
+              : ListView.builder(
+                  controller: widget.scrollController,
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+                  itemCount: list.length,
+                  itemBuilder: (context, i) {
+                    final r = list[i];
+                    final (tone, label) = _rowStatus(r);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: ListTile(
+                        selected: r.userId == widget.selectedId,
+                        onTap: () => widget.onSelect(r),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 2),
+                        leading: ArkaAvatar(r.name, size: 40),
+                        title: Text(r.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: context.tt.titleSmall),
+                        subtitle: Text(r.designation ?? r.employeeCode ?? '—',
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        trailing: ArkaStatusChip(label, tone: tone),
+                      ),
+                    );
+                  },
                 ),
-            ],
-            onChanged: (v) {
-              if (v != null) onMonth(v);
-            },
-          ),
         ),
       ],
     );
   }
 }
 
-class _PreviewSheet extends StatelessWidget {
-  const _PreviewSheet({
-    required this.preview,
-    required this.locked,
-    required this.inr,
-  });
+class _SelectedEmployee extends StatelessWidget {
+  const _SelectedEmployee(
+      {required this.row, required this.count, required this.onChange});
 
-  final Map<String, dynamic> preview;
-  final bool locked;
-  final NumberFormat inr;
+  final PayrollGridRow row;
+  final int count;
+  final VoidCallback onChange;
 
   @override
   Widget build(BuildContext context) {
-    final emp = preview['employee'] as Map<String, dynamic>? ?? {};
+    final (tone, label) = _rowStatus(row);
+    return ArkaCard(
+      onTap: onChange,
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        children: [
+          ArkaAvatar(row.name, size: 46),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(row.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.tt.titleMedium),
+                const SizedBox(height: 4),
+                Row(children: [ArkaStatusChip(label, tone: tone, dot: true)]),
+              ],
+            ),
+          ),
+          TextButton.icon(
+            onPressed: onChange,
+            icon: const Icon(Icons.swap_horiz_rounded, size: 18),
+            label: Text('Change ($count)'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EstimateCard extends StatelessWidget {
+  const _EstimateCard(
+      {required this.monthly, required this.lop, required this.extras});
+
+  final double monthly;
+  final double lop;
+  final double extras;
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = context.cs.onSecondaryContainer;
+    Widget line(String k, String v, {bool strong = false}) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              Expanded(
+                  child: Text(k,
+                      style: context.tt.bodyMedium?.copyWith(color: fg))),
+              Text(
+                v,
+                style: (strong ? context.tt.titleMedium : context.tt.bodyMedium)
+                    ?.copyWith(
+                  color: fg,
+                  fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        );
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: context.cs.secondaryContainer.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Quick estimate',
+              style: context.tt.titleSmall?.copyWith(color: fg)),
+          const SizedBox(height: 8),
+          line('Monthly package', Fmt.inr(monthly)),
+          line('LOP deduction', '− ${Fmt.inr(lop)}'),
+          line('Bonus & other', '+ ${Fmt.inr(extras)}'),
+          Divider(color: fg.withValues(alpha: 0.2), height: 18),
+          line('Estimated gross', Fmt.inr(monthly - lop + extras),
+              strong: true),
+          const SizedBox(height: 4),
+          Text(
+            'Exact tax and deductions appear in the preview before locking.',
+            style: context.tt.bodySmall
+                ?.copyWith(color: fg.withValues(alpha: 0.8)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PreviewSheet extends StatelessWidget {
+  const _PreviewSheet(
+      {required this.preview,
+      required this.locked,
+      required this.name,
+      required this.period});
+
+  final Map<String, dynamic> preview;
+  final bool locked;
+  final String name;
+  final PayPeriod period;
+
+  @override
+  Widget build(BuildContext context) {
     final lop = parseApiNum(preview['lopDeductionEstimate']);
+    final p = context.palette;
+
+    final earnings = [
+      ('Basic', preview['basicEarned']),
+      ('HRA', preview['hraEarned']),
+      ('Special allowance', preview['specialAllowanceEarned']),
+      ('Travel / conveyance', preview['conveyanceEarned']),
+      ('Other fixed', preview['medicalEarned']),
+      ('Bonus', preview['bonus']),
+      ('Other', preview['otherEarnings']),
+    ];
+    final deductions = [
+      ('EPF', preview['epfEmployee']),
+      ('ESIC', preview['esicEmployee']),
+      ('Professional tax', preview['professionalTax']),
+      ('TDS', preview['tds']),
+    ];
+
+    Widget table(String title, List<(String, dynamic)> rows, String totalLabel,
+        dynamic total) {
+      final shown = rows.where((r) => parseApiNum(r.$2) != 0).toList();
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(title.toUpperCase(), style: context.tt.labelSmall),
+              const SizedBox(height: 8),
+              if (shown.isEmpty)
+                Text('None', style: context.tt.bodySmall)
+              else
+                for (final (k, v) in shown)
+                  _Line(label: k, value: parseApiNum(v)),
+              const Divider(height: 20),
+              _Line(label: totalLabel, value: parseApiNum(total), bold: true),
+            ],
+          ),
+        ),
+      );
+    }
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Center(
-            child: Container(
-              width: 42,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade400,
-                borderRadius: BorderRadius.circular(99),
-              ),
-            ),
-          ),
-          Text(
-            'Payroll preview — ${emp['name'] ?? ''}',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
+          Row(
+            children: [
+              ArkaAvatar(name, size: 44),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(name, style: context.tt.titleLarge),
+                    Text('Payroll preview · ${period.label}',
+                        style: context.tt.bodySmall),
+                  ],
                 ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              gradient: LinearGradient(colors: [p.heroStart, p.heroEnd]),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('NET PAY',
+                    style: context.tt.labelSmall
+                        ?.copyWith(color: Colors.white70, letterSpacing: 1.2)),
+                const SizedBox(height: 6),
+                Text(
+                  Fmt.inr(parseApiNum(preview['netPay'])),
+                  style:
+                      context.tt.headlineMedium?.copyWith(color: Colors.white),
+                ),
+                if (lop > 0) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Includes LOP deduction of ${Fmt.inr(lop)}',
+                    style:
+                        context.tt.bodySmall?.copyWith(color: Colors.white70),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
           LayoutBuilder(
             builder: (context, c) {
-              final dual = c.maxWidth > 640;
-              final earnings = Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Earnings', style: TextStyle(fontWeight: FontWeight.w700)),
-                  _line('Basic', preview['basicEarned']),
-                  _line('HRA', preview['hraEarned']),
-                  _line('Special Allowance', preview['specialAllowanceEarned']),
-                  _line('Travel / conveyance', preview['conveyanceEarned']),
-                  _line('Other fixed', preview['medicalEarned']),
-                  _line('Bonus', preview['bonus']),
-                  _line('Other', preview['otherEarnings']),
-                  const Divider(),
-                  _line('Gross', preview['grossEarnings'], bold: true),
-                ],
-              );
-              final deductions = Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Deductions', style: TextStyle(fontWeight: FontWeight.w700)),
-                  _line('EPF', preview['epfEmployee']),
-                  _line('ESIC', preview['esicEmployee']),
-                  _line('Professional Tax (MH)', preview['professionalTax']),
-                  _line('TDS', preview['tds']),
-                  const Divider(),
-                  _line('Total deductions', preview['totalDeductions'], bold: true),
-                  _line('Net Pay', preview['netPay'], bold: true),
-                ],
-              );
-              if (dual) {
+              final e = table(
+                  'Earnings', earnings, 'Gross', preview['grossEarnings']);
+              final d = table('Deductions', deductions, 'Total deductions',
+                  preview['totalDeductions']);
+              if (c.maxWidth > 560) {
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(child: earnings),
-                    const SizedBox(width: 24),
-                    Expanded(child: deductions),
+                    Expanded(child: e),
+                    const SizedBox(width: 12),
+                    Expanded(child: d)
                   ],
                 );
               }
-              return Column(children: [earnings, const SizedBox(height: 16), deductions]);
+              return Column(children: [e, const SizedBox(height: 12), d]);
             },
           ),
-          if (lop > 0) ...[
-            const SizedBox(height: 8),
-            Text(
-              'LOP impact: ${inr.format(lop)}',
-              style: const TextStyle(color: ArkaColors.muted),
-            ),
-          ],
           const SizedBox(height: 20),
-          FilledButton(
+          FilledButton.icon(
             onPressed: () => Navigator.pop(context, true),
-            child: Text(locked ? 'Update locked slip' : 'Confirm & lock slip'),
+            icon: const Icon(Icons.lock_rounded),
+            label: Text(locked ? 'Update locked slip' : 'Confirm & lock slip'),
           ),
-          TextButton(
+          const SizedBox(height: 8),
+          OutlinedButton(
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Back to edit'),
           ),
@@ -735,23 +975,27 @@ class _PreviewSheet extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _line(String label, dynamic value, {bool bold = false}) {
-    final n = parseApiNum(value);
+class _Line extends StatelessWidget {
+  const _Line({required this.label, required this.value, this.bold = false});
+
+  final String label;
+  final num value;
+  final bool bold;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = bold ? context.tt.titleSmall : context.tt.bodyMedium;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         children: [
           Expanded(
-            child: Text(
-              label,
-              style: TextStyle(fontWeight: bold ? FontWeight.w700 : FontWeight.w400),
-            ),
-          ),
-          Text(
-            inr.format(n),
-            style: TextStyle(fontWeight: bold ? FontWeight.w700 : FontWeight.w500),
-          ),
+              child: Text(label,
+                  style: style?.copyWith(
+                      color: bold ? null : context.cs.onSurfaceVariant))),
+          Text(Fmt.inr(value), style: style),
         ],
       ),
     );
