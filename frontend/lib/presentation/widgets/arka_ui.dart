@@ -92,6 +92,15 @@ class ToneColors {
       _ => (ArkaTone.neutral, Fmt.titleCase(status)),
     };
 
+/// Maps payslip email outcome after lock.
+(ArkaTone, String)? slipEmailTone(String? status) => switch (status) {
+      'SENT' => (ArkaTone.success, 'Email sent'),
+      'PENDING' => (ArkaTone.info, 'Email sending…'),
+      'FAILED' => (ArkaTone.danger, 'Email failed'),
+      'SKIPPED' => (ArkaTone.neutral, 'Email skipped'),
+      _ => null,
+    };
+
 // ── Small building blocks ───────────────────────────────────────────────────
 
 class ArkaStatusChip extends StatelessWidget {

@@ -239,12 +239,30 @@ export class PayrollService {
       summary: `Locked payroll ${trackingReference} net ₹${computed.netPay}`,
     });
 
+    await this.prisma.monthlyPayroll.update({
+      where: { id: row.id },
+      data: { emailStatus: 'PENDING', emailError: null, emailSentAt: null },
+    });
+
     void this.emailLockedSlip(row.id, actor).catch((err) => {
       const detail = err instanceof Error ? err.message : String(err);
       this.logger.warn(`Payslip email failed for ${row.id}: ${detail}`);
     });
 
-    return row;
+    return this.prisma.monthlyPayroll.findUniqueOrThrow({
+      where: { id: row.id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            employeeCode: true,
+            email: true,
+          },
+        },
+      },
+    });
   }
 
   /** Best-effort email after lock — never blocks payroll confirmation. */
@@ -252,25 +270,64 @@ export class PayrollService {
     payrollId: string,
     actor: JwtPayload,
   ): Promise<void> {
-    if (!this.mail.isConfigured()) return;
+    if (!this.mail.isConfigured()) {
+      await this.prisma.monthlyPayroll.update({
+        where: { id: payrollId },
+        data: {
+          emailStatus: 'SKIPPED',
+          emailError: 'SMTP not configured',
+          emailSentAt: null,
+        },
+      });
+      return;
+    }
 
     const slip = await this.getSlipMeta(payrollId, actor);
     const to = slip.user.email?.trim();
     if (!to) {
       this.logger.warn(`No employee email for payroll ${payrollId}`);
+      await this.prisma.monthlyPayroll.update({
+        where: { id: payrollId },
+        data: {
+          emailStatus: 'SKIPPED',
+          emailError: 'Employee has no email',
+          emailSentAt: null,
+        },
+      });
       return;
     }
 
-    const { buffer, filename } = await this.generatePdfBuffer(payrollId, actor);
-    const periodLabel = `${MONTH_LABELS[slip.month]} ${slip.year}`;
-    await this.mail.sendPayslipPdf({
-      to,
-      employeeName: `${slip.user.firstName} ${slip.user.lastName}`.trim(),
-      periodLabel,
-      trackingReference: slip.trackingReference,
-      pdf: buffer,
-      filename,
-    });
+    try {
+      const { buffer, filename } = await this.generatePdfBuffer(payrollId, actor);
+      const periodLabel = `${MONTH_LABELS[slip.month]} ${slip.year}`;
+      await this.mail.sendPayslipPdf({
+        to,
+        employeeName: `${slip.user.firstName} ${slip.user.lastName}`.trim(),
+        periodLabel,
+        trackingReference: slip.trackingReference,
+        pdf: buffer,
+        filename,
+      });
+      await this.prisma.monthlyPayroll.update({
+        where: { id: payrollId },
+        data: {
+          emailStatus: 'SENT',
+          emailSentAt: new Date(),
+          emailError: null,
+        },
+      });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      await this.prisma.monthlyPayroll.update({
+        where: { id: payrollId },
+        data: {
+          emailStatus: 'FAILED',
+          emailError: detail.slice(0, 500),
+          emailSentAt: null,
+        },
+      });
+      throw err;
+    }
   }
 
   async processBatch(

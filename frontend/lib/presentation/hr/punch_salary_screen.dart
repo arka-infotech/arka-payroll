@@ -229,8 +229,8 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
       ArkaSnack.success(
         context,
         s.isLocked
-            ? 'Slip updated for ${s.name}'
-            : 'Salary locked for ${s.name}',
+            ? 'Slip updated for ${s.name} — email will retry in the background'
+            : 'Salary locked for ${s.name} — check Dashboard for email status',
       );
       _refreshAfterWrite();
     } catch (e) {

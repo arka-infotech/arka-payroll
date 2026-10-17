@@ -94,6 +94,9 @@ class PeriodSlipRow {
     required this.trackingReference,
     required this.status,
     required this.netPay,
+    this.emailStatus,
+    this.emailError,
+    this.emailSentAt,
   });
 
   final String id;
@@ -103,13 +106,23 @@ class PeriodSlipRow {
   final String status;
   final num netPay;
 
+  /// PENDING | SENT | FAILED | SKIPPED (null = not locked / never attempted)
+  final String? emailStatus;
+  final String? emailError;
+  final DateTime? emailSentAt;
+
   bool get isDraft => status == 'DRAFT';
+  bool get emailSent => emailStatus == 'SENT';
+  bool get emailFailed => emailStatus == 'FAILED';
+  bool get emailPending => emailStatus == 'PENDING';
+  bool get emailSkipped => emailStatus == 'SKIPPED';
 
   factory PeriodSlipRow.fromJson(Map<String, dynamic> json) {
     final user = json['user'] as Map<String, dynamic>?;
     final name = user == null
         ? 'Employee'
         : '${user['firstName']} ${user['lastName']}';
+    final sentRaw = json['emailSentAt'];
     return PeriodSlipRow(
       id: json['id'] as String,
       userId: (json['userId'] ?? user?['id'] ?? '') as String,
@@ -117,6 +130,11 @@ class PeriodSlipRow {
       trackingReference: json['trackingReference'] as String,
       status: json['status'] as String,
       netPay: parseApiNum(json['netPay']),
+      emailStatus: json['emailStatus'] as String?,
+      emailError: json['emailError'] as String?,
+      emailSentAt: sentRaw == null
+          ? null
+          : DateTime.tryParse(sentRaw.toString()),
     );
   }
 }

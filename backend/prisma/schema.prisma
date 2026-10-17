@@ -198,6 +198,11 @@ model MonthlyPayroll {
   processedAt DateTime?     @map("processed_at")
   processedBy String?       @map("processed_by") @db.Uuid
 
+  /// Payslip email after lock: PENDING | SENT | FAILED | SKIPPED
+  emailStatus String?   @map("email_status") @db.VarChar(16)
+  emailSentAt DateTime? @map("email_sent_at")
+  emailError  String?   @map("email_error") @db.VarChar(500)
+
   /// Opaque JSON snapshot of calculation inputs/outputs for audit
   calculationSnapshot Json? @map("calculation_snapshot")
 

@@ -331,6 +331,20 @@ class _SlipCard extends StatelessWidget {
     );
     final amount = Text(Fmt.inr(row.netPay), style: context.tt.titleMedium);
     final chip = ArkaStatusChip(label, tone: tone, dot: true);
+    final email = slipEmailTone(row.emailStatus);
+    final statusRow = Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      children: [
+        chip,
+        if (email != null)
+          ArkaStatusChip(
+            email.$2,
+            tone: email.$1,
+            dot: true,
+          ),
+      ],
+    );
 
     return ArkaCard(
       onTap: onOpen,
@@ -342,8 +356,9 @@ class _SlipCard extends StatelessWidget {
                 const SizedBox(width: 14),
                 identity,
                 SizedBox(
-                    width: 110,
-                    child: Align(alignment: Alignment.centerLeft, child: chip)),
+                    width: 200,
+                    child:
+                        Align(alignment: Alignment.centerLeft, child: statusRow)),
                 SizedBox(
                     width: 150,
                     child:
@@ -368,8 +383,7 @@ class _SlipCard extends StatelessWidget {
                 Row(
                   children: [
                     const SizedBox(width: 54),
-                    chip,
-                    const Spacer(),
+                    Expanded(child: statusRow),
                     actions,
                   ],
                 ),
