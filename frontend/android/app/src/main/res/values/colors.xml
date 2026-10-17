@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- System-theme adaptive icon (follows phone light/dark via values-night) -->
+    <!-- Home-screen icon follows phone light/dark via values-night -->
     <color name="ic_launcher_background">#F6F4F1</color>
-    <!-- Forced in-app light / dark launcher aliases -->
-    <color name="ic_launcher_background_light">#F6F4F1</color>
-    <color name="ic_launcher_background_dark">#000000</color>
+    <!-- Native launch splash — same as Flutter SplashScreen light -->
+    <color name="splash_background">#F6F4F1</color>
 </resources>

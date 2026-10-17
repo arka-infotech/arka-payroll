@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:arka_payroll/core/config/app_config.dart';
@@ -9,9 +10,16 @@ String apiErrorMessage(Object error) {
   if (error is ApiException) {
     return _flattenMessage(error.message);
   }
-  if (error is http.ClientException) {
+  if (error is HandshakeException ||
+      error is TlsException ||
+      error.toString().contains('HandshakeException') ||
+      error.toString().contains('CERTIFICATE_VERIFY_FAILED')) {
+    return 'Secure connection to ${AppConfig.apiBaseUrl} failed (TLS/certificate). '
+        'The server may be using a self-signed certificate.';
+  }
+  if (error is SocketException || error is http.ClientException) {
     return 'Cannot reach the payroll server at ${AppConfig.apiBaseUrl}. '
-        'Keep the phone and computer on the same Wi-Fi, with the API running.';
+        'Check your network connection and that the API is running.';
   }
   if (error is TimeoutException) {
     return 'The server took too long to respond. Please try again.';
@@ -45,7 +53,12 @@ class Failure {
 }
 
 Failure describeError(Object error) {
-  if (error is http.ClientException || error is TimeoutException) {
+  if (error is HandshakeException ||
+      error is TlsException ||
+      error is SocketException ||
+      error is http.ClientException ||
+      error is TimeoutException ||
+      error.toString().contains('HandshakeException')) {
     return Failure(
       FailureKind.offline,
       'Can’t reach the server',
@@ -74,12 +87,22 @@ Failure describeError(Object error) {
         return Failure(FailureKind.notFound, 'Not found', msg);
       case 409:
         return Failure(FailureKind.conflict, 'Already exists', msg);
+      case 503:
+        return Failure(
+          FailureKind.server,
+          'Service unavailable',
+          msg.isEmpty
+              ? 'A required service is down. Please try again shortly.'
+              : msg,
+        );
       default:
         if (error.statusCode >= 500) {
-          return const Failure(
+          return Failure(
             FailureKind.server,
             'Server hiccup',
-            'Something went wrong on our side. Please try again in a moment.',
+            msg.isEmpty
+                ? 'Something went wrong on our side. Please try again in a moment.'
+                : msg,
           );
         }
         return Failure(FailureKind.unknown, 'Something went wrong', msg);

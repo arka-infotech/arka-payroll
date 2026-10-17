@@ -1,5 +1,6 @@
 import 'package:arka_payroll/core/parse_api_num.dart';
 import 'package:arka_payroll/data/auth/auth_repository.dart';
+import 'package:arka_payroll/data/payroll/slip_pdf_builder.dart';
 
 class PayrollGridRow {
   PayrollGridRow({
@@ -264,8 +265,10 @@ class PayrollRepository {
         .toList();
   }
 
-  Future<List<int>> fetchPdfBytes(String payrollId) {
-    return _auth.api.getBytes('/payroll/$payrollId/pdf');
+  /// Builds the payslip PDF on-device from slip JSON (no Chrome on the server).
+  Future<List<int>> fetchPdfBytes(String payrollId) async {
+    final slip = await fetchSlip(payrollId);
+    return SlipPdfBuilder.build(slip);
   }
 
   /// PDF bytes + official slip filename (`AIPS-YYYY-MM-CODE.pdf`).
@@ -274,7 +277,7 @@ class PayrollRepository {
   ) async {
     final meta = await fetchSlip(payrollId);
     final ref = meta['trackingReference'] as String? ?? payrollId;
-    final bytes = await fetchPdfBytes(payrollId);
+    final bytes = await SlipPdfBuilder.build(meta);
     return (bytes: bytes, filename: '$ref.pdf');
   }
 

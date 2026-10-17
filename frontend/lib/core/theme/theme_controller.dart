@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:arka_payroll/core/theme/launcher_icon.dart';
 
 const _kThemeKey = 'aips_theme_mode';
 
@@ -15,11 +14,11 @@ class ThemeController extends ChangeNotifier {
       'dark' => ThemeMode.dark,
       _ => ThemeMode.system,
     };
-    await LauncherIcon.sync(mode);
     notifyListeners();
   }
 
   Future<void> setMode(ThemeMode next) async {
+    if (mode == next) return;
     mode = next;
     final prefs = await SharedPreferences.getInstance();
     final value = switch (next) {
@@ -28,7 +27,6 @@ class ThemeController extends ChangeNotifier {
       ThemeMode.system => 'system',
     };
     await prefs.setString(_kThemeKey, value);
-    await LauncherIcon.sync(mode);
     notifyListeners();
   }
 

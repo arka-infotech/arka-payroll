@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:arka_payroll/core/config/app_config.dart';
+import 'package:arka_payroll/core/network/api_http.dart';
 
 class ApiException implements Exception {
   ApiException(this.statusCode, this.message);
@@ -14,10 +15,11 @@ class ApiException implements Exception {
 typedef TokenGetter = Future<String?> Function();
 
 class ApiClient {
-  ApiClient({required this.getToken});
+  ApiClient({required this.getToken, http.Client? httpClient})
+      : _http = httpClient ?? createApiHttpClient();
 
   final TokenGetter getToken;
-  final http.Client _http = http.Client();
+  final http.Client _http;
 
   Uri _uri(String path, [Map<String, String>? query]) {
     final base = AppConfig.apiBaseUrl.replaceAll(RegExp(r'/$'), '');

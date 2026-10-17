@@ -2,4 +2,7 @@
 <resources>
     <!-- Dark system theme launcher background -->
     <color name="ic_launcher_background">#000000</color>
+    <!-- Native launch splash — same as Flutter SplashScreen dark -->
+    <color name="splash_background">#000000</color>
 </resources>
+
