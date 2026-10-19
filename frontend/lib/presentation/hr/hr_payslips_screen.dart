@@ -331,17 +331,28 @@ class _SlipCard extends StatelessWidget {
     );
     final amount = Text(Fmt.inr(row.netPay), style: context.tt.titleMedium);
     final chip = ArkaStatusChip(label, tone: tone, dot: true);
-    final email = slipEmailTone(row.emailStatus);
+    final expectEmail = row.status == 'LOCKED' ||
+        row.status == 'PROCESSED' ||
+        row.status == 'PAID';
+    final email = slipEmailTone(row.emailStatus, expectEmail: expectEmail);
+    final emailTooltip = row.emailError?.trim().isNotEmpty == true
+        ? row.emailError!
+        : (row.emailSentAt != null
+            ? 'Sent ${row.emailSentAt!.toLocal()}'
+            : null);
     final statusRow = Wrap(
       spacing: 6,
       runSpacing: 4,
       children: [
         chip,
         if (email != null)
-          ArkaStatusChip(
-            email.$2,
-            tone: email.$1,
-            dot: true,
+          Tooltip(
+            message: emailTooltip ?? email.$2,
+            child: ArkaStatusChip(
+              email.$2,
+              tone: email.$1,
+              dot: true,
+            ),
           ),
       ],
     );

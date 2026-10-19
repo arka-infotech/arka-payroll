@@ -442,7 +442,13 @@ class _RecentRow extends StatelessWidget {
                 Text(Fmt.inr0(slip.netPay), style: context.tt.titleSmall),
                 const SizedBox(height: 4),
                 ArkaStatusChip(label, tone: tone, dot: true),
-                if (slipEmailTone(slip.emailStatus) case final email?) ...[
+                if (slipEmailTone(
+                      slip.emailStatus,
+                      expectEmail: slip.status == 'LOCKED' ||
+                          slip.status == 'PROCESSED' ||
+                          slip.status == 'PAID',
+                    )
+                    case final email?) ...[
                   const SizedBox(height: 4),
                   ArkaStatusChip(email.$2, tone: email.$1, dot: true),
                 ],

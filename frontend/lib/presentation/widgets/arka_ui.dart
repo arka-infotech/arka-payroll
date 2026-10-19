@@ -93,12 +93,14 @@ class ToneColors {
     };
 
 /// Maps payslip email outcome after lock.
-(ArkaTone, String)? slipEmailTone(String? status) => switch (status) {
+/// When [expectEmail] is true (locked slip) and status is null, shows "Email not sent".
+(ArkaTone, String)? slipEmailTone(String? status, {bool expectEmail = false}) =>
+    switch (status) {
       'SENT' => (ArkaTone.success, 'Email sent'),
       'PENDING' => (ArkaTone.info, 'Email sending…'),
       'FAILED' => (ArkaTone.danger, 'Email failed'),
       'SKIPPED' => (ArkaTone.neutral, 'Email skipped'),
-      _ => null,
+      _ => expectEmail ? (ArkaTone.warning, 'Email not sent') : null,
     };
 
 // ── Small building blocks ───────────────────────────────────────────────────

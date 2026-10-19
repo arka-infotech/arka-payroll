@@ -6,11 +6,17 @@ import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 export type PayslipMailPayload = {
   to: string;
   employeeName: string;
-  periodLabel: string;
+  /** e.g. "1 Sep 26 - 30 Sep 26" — used in the subject line */
+  periodRange: string;
+  /** e.g. "SEPTEMBER 2026" — used in the body */
+  monthYearUpper: string;
   trackingReference: string;
   pdf: Buffer;
   filename: string;
 };
+
+const CONFIDENTIALITY_NOTE =
+  'CONFIDENTIALITY NOTE: This message may contain confidential or legally privileged information. If you are not the intended recipient, you are hereby notified that any disclosure, copying, distribution, or taking any action in reliance on these contents is strictly prohibited and may be unlawful. If you have received this communication in error, please notify us immediately by responding to this e-mail and then delete it from your system.';
 
 @Injectable()
 export class MailService {
@@ -79,24 +85,29 @@ export class MailService {
       this.config.get<string>('COMPANY_NAME')?.trim() ||
       'Arka Infotech Software Solutions';
 
+    const subject = `${company} - Pay Slip: ${payload.periodRange}`;
+    const text = [
+      'Dear Employee,',
+      '',
+      `Please find attached your Pay Slip for the month of ${payload.monthYearUpper}.`,
+      '',
+      'DO NOT REPLY TO THIS EMAIL ADDRESS',
+      '',
+      CONFIDENTIALITY_NOTE,
+    ].join('\n');
+    const html = `
+      <p>Dear Employee,</p>
+      <p>Please find attached your Pay Slip for the month of <strong>${escapeHtml(payload.monthYearUpper)}</strong>.</p>
+      <p><strong>DO NOT REPLY TO THIS EMAIL ADDRESS</strong></p>
+      <p style="font-size:12px;color:#555;">${escapeHtml(CONFIDENTIALITY_NOTE)}</p>
+    `;
+
     await transport.sendMail({
       from: this.getFrom(),
       to: payload.to,
-      subject: `Payslip · ${payload.periodLabel} · ${payload.trackingReference}`,
-      text: [
-        `Hi ${payload.employeeName},`,
-        '',
-        `Your payslip for ${payload.periodLabel} is attached.`,
-        `Reference: ${payload.trackingReference}`,
-        '',
-        `— ${company}`,
-      ].join('\n'),
-      html: `
-        <p>Hi ${escapeHtml(payload.employeeName)},</p>
-        <p>Your payslip for <strong>${escapeHtml(payload.periodLabel)}</strong> is attached.</p>
-        <p>Reference: <code>${escapeHtml(payload.trackingReference)}</code></p>
-        <p>— ${escapeHtml(company)}</p>
-      `,
+      subject,
+      text,
+      html,
       attachments: [
         {
           filename: payload.filename,

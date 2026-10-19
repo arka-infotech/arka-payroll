@@ -43,6 +43,30 @@ const MONTH_LABELS = [
   'December',
 ];
 
+const MONTH_SHORT = [
+  '',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/** e.g. year=2026, month=9 → "1 Sep 26 - 30 Sep 26" */
+function formatPayslipPeriodRange(year: number, month: number): string {
+  const lastDay = new Date(year, month, 0).getDate();
+  const short = MONTH_SHORT[month] ?? String(month);
+  const yy = String(year).slice(-2);
+  return `1 ${short} ${yy} - ${lastDay} ${short} ${yy}`;
+}
+
 @Injectable()
 export class PayrollService {
   private readonly logger = new Logger(PayrollService.name);
@@ -299,11 +323,11 @@ export class PayrollService {
 
     try {
       const { buffer, filename } = await this.generatePdfBuffer(payrollId, actor);
-      const periodLabel = `${MONTH_LABELS[slip.month]} ${slip.year}`;
       await this.mail.sendPayslipPdf({
         to,
         employeeName: `${slip.user.firstName} ${slip.user.lastName}`.trim(),
-        periodLabel,
+        periodRange: formatPayslipPeriodRange(slip.year, slip.month),
+        monthYearUpper: `${MONTH_LABELS[slip.month].toUpperCase()} ${slip.year}`,
         trackingReference: slip.trackingReference,
         pdf: buffer,
         filename,
@@ -712,7 +736,7 @@ export class PayrollService {
       deductions,
     };
 
-    return this.prisma.monthlyPayroll.update({
+    const updated = await this.prisma.monthlyPayroll.update({
       where: { id: payrollId },
       data: {
         daysPayable: dto.paidDays,
@@ -728,6 +752,23 @@ export class PayrollService {
         slipDocument: document as Prisma.InputJsonValue,
       },
     });
+
+    // Editing a locked slip from Payslips should re-send the PDF (same as re-lock).
+    if (
+      slip.status === PayrollStatus.LOCKED ||
+      slip.status === PayrollStatus.PROCESSED
+    ) {
+      await this.prisma.monthlyPayroll.update({
+        where: { id: payrollId },
+        data: { emailStatus: 'PENDING', emailError: null, emailSentAt: null },
+      });
+      void this.emailLockedSlip(payrollId, actor).catch((err) => {
+        const detail = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`Payslip email failed for ${payrollId}: ${detail}`);
+      });
+    }
+
+    return updated;
   }
 
   async generatePdfBuffer(
