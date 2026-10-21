@@ -289,12 +289,122 @@ export class PayrollService {
     });
   }
 
+  private isEmailableStatus(status: PayrollStatus): boolean {
+    return (
+      status === PayrollStatus.LOCKED ||
+      status === PayrollStatus.PROCESSED ||
+      status === PayrollStatus.PAID
+    );
+  }
+
+  /** Manual / API: email one locked slip and return updated email fields. */
+  async sendSlipEmail(payrollId: string, actor: JwtPayload) {
+    const slip = await this.getSlipMeta(payrollId, actor);
+    if (!this.isEmailableStatus(slip.status)) {
+      throw new BadRequestException(
+        'Only locked (or paid) slips can be emailed. Lock the slip first.',
+      );
+    }
+    if (!canManageUser(actor, slip.user)) {
+      throw new ForbiddenException('Cannot email this salary slip');
+    }
+
+    await this.prisma.monthlyPayroll.update({
+      where: { id: payrollId },
+      data: { emailStatus: 'PENDING', emailError: null, emailSentAt: null },
+    });
+
+    try {
+      await this.emailLockedSlip(payrollId, actor);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Payslip email failed for ${payrollId}: ${detail}`);
+    }
+
+    return this.prisma.monthlyPayroll.findUniqueOrThrow({
+      where: { id: payrollId },
+      select: {
+        id: true,
+        trackingReference: true,
+        status: true,
+        emailStatus: true,
+        emailError: true,
+        emailSentAt: true,
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
+    });
+  }
+
+  /** Manual: email every locked/paid slip in a month. */
+  async emailPeriod(year: number, month: number, actor: JwtPayload) {
+    if (!this.mail.isConfigured()) {
+      throw new BadRequestException(
+        'SMTP not configured on the server. Set SMTP_HOST, SMTP_USER, and SMTP_PASS (quote passwords that start with #), then restart the API.',
+      );
+    }
+
+    const slips = await this.prisma.monthlyPayroll.findMany({
+      where: {
+        year,
+        month,
+        status: {
+          in: [
+            PayrollStatus.LOCKED,
+            PayrollStatus.PROCESSED,
+            PayrollStatus.PAID,
+          ],
+        },
+        user: visibleUsersWhere(actor),
+      },
+      select: { id: true },
+      orderBy: { trackingReference: 'asc' },
+    });
+
+    const results = [];
+    for (const slip of slips) {
+      results.push(await this.sendSlipEmail(slip.id, actor));
+    }
+
+    const sent = results.filter((r) => r.emailStatus === 'SENT').length;
+    const failed = results.filter((r) => r.emailStatus === 'FAILED').length;
+    const skipped = results.filter((r) => r.emailStatus === 'SKIPPED').length;
+
+    await this.audit.write({
+      actorId: actor.sub,
+      actorEmail: actor.email,
+      actorRole: actor.role,
+      action: 'PAYROLL_EMAIL_PERIOD',
+      entity: 'monthly_payroll',
+      summary: `Emailed period ${year}-${month}: ${sent} sent, ${failed} failed, ${skipped} skipped of ${results.length}`,
+    });
+
+    return {
+      year,
+      month,
+      total: results.length,
+      sent,
+      failed,
+      skipped,
+      results,
+    };
+  }
+
   /** Best-effort email after lock — never blocks payroll confirmation. */
   private async emailLockedSlip(
     payrollId: string,
     actor: JwtPayload,
   ): Promise<void> {
     if (!this.mail.isConfigured()) {
+      this.logger.warn(
+        `SMTP not configured — skipped payslip email for ${payrollId}`,
+      );
       await this.prisma.monthlyPayroll.update({
         where: { id: payrollId },
         data: {

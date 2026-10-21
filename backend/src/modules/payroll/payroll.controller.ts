@@ -97,6 +97,26 @@ export class PayrollController {
     );
   }
 
+  /** Email every locked/paid slip for a month (manual bulk send). */
+  @Post('email-period')
+  @Roles(AppRole.HR_ADMIN, AppRole.SUPER_ADMIN)
+  emailPeriod(
+    @Body() body: { year: number; month: number },
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.payrollService.emailPeriod(body.year, body.month, user);
+  }
+
+  /** Email one locked slip PDF to the employee (manual resend). */
+  @Post(':id/email')
+  @Roles(AppRole.HR_ADMIN, AppRole.SUPER_ADMIN)
+  sendEmail(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.payrollService.sendSlipEmail(id, user);
+  }
+
   @Patch(':id/document')
   @Roles(AppRole.HR_ADMIN, AppRole.SUPER_ADMIN)
   updateDocument(

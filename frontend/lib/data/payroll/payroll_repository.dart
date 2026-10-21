@@ -112,6 +112,8 @@ class PeriodSlipRow {
   final DateTime? emailSentAt;
 
   bool get isDraft => status == 'DRAFT';
+  bool get canEmail =>
+      status == 'LOCKED' || status == 'PROCESSED' || status == 'PAID';
   bool get emailSent => emailStatus == 'SENT';
   bool get emailFailed => emailStatus == 'FAILED';
   bool get emailPending => emailStatus == 'PENDING';
@@ -307,6 +309,20 @@ class PayrollRepository {
       '/payroll/$payrollId/document',
       body: body,
     ) as Map<String, dynamic>;
+  }
+
+  /// Manual: email one locked slip PDF to the employee.
+  Future<Map<String, dynamic>> sendSlipEmail(String payrollId) async {
+    return await _auth.api.post('/payroll/$payrollId/email')
+        as Map<String, dynamic>;
+  }
+
+  /// Manual: email every locked/paid slip for the month.
+  Future<Map<String, dynamic>> emailPeriod(int year, int month) async {
+    return await _auth.api.post('/payroll/email-period', body: {
+      'year': year,
+      'month': month,
+    }) as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> fetchSlip(String payrollId) async {

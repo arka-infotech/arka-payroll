@@ -22,6 +22,8 @@ class HrPayslipsScreen extends ConsumerStatefulWidget {
 class _HrPayslipsScreenState extends ConsumerState<HrPayslipsScreen> {
   String _query = '';
   String? _downloading;
+  String? _emailingId;
+  bool _emailingPeriod = false;
 
   /// Logged-in user's slip first, then the rest (search still applies).
   List<PeriodSlipRow> _visible(List<PeriodSlipRow> rows) {
@@ -63,6 +65,83 @@ class _HrPayslipsScreenState extends ConsumerState<HrPayslipsScreen> {
     if (saved == true && mounted) invalidatePayrollData(ref);
   }
 
+  Future<void> _emailOne(PeriodSlipRow row) async {
+    if (!row.canEmail) {
+      ArkaSnack.error(context, 'Lock the slip before emailing.');
+      return;
+    }
+    final ok = await confirmArka(
+      context,
+      title: 'Send payslip email?',
+      message:
+          'Send the PDF for ${row.employeeName} (${row.trackingReference}) to their profile email.',
+      confirmLabel: 'Send email',
+      icon: Icons.mark_email_unread_outlined,
+    );
+    if (!ok || !mounted) return;
+
+    setState(() => _emailingId = row.id);
+    try {
+      final result =
+          await ref.read(payrollRepositoryProvider).sendSlipEmail(row.id);
+      if (!mounted) return;
+      final status = result['emailStatus'] as String?;
+      final err = result['emailError'] as String?;
+      final to = (result['user'] as Map?)?['email'] as String?;
+      if (status == 'SENT') {
+        ArkaSnack.success(
+            context, 'Email sent${to != null ? ' to $to' : ''}');
+      } else {
+        ArkaSnack.error(
+            context, err?.isNotEmpty == true ? err! : 'Email $status');
+      }
+      invalidatePayrollData(ref);
+    } catch (e) {
+      if (mounted) ArkaSnack.error(context, e);
+    } finally {
+      if (mounted) setState(() => _emailingId = null);
+    }
+  }
+
+  Future<void> _emailAll(List<PeriodSlipRow> rows) async {
+    final period = ref.read(payslipPeriodProvider);
+    final eligible = rows.where((r) => r.canEmail).length;
+    if (eligible == 0) {
+      ArkaSnack.error(context, 'No locked slips to email for ${period.label}.');
+      return;
+    }
+    final ok = await confirmArka(
+      context,
+      title: 'Email all locked slips?',
+      message:
+          'Send payslip PDFs for $eligible locked employee${eligible == 1 ? '' : 's'} in ${period.label}.',
+      confirmLabel: 'Send all',
+      icon: Icons.outgoing_mail,
+    );
+    if (!ok || !mounted) return;
+
+    setState(() => _emailingPeriod = true);
+    try {
+      final result = await ref
+          .read(payrollRepositoryProvider)
+          .emailPeriod(period.year, period.month);
+      if (!mounted) return;
+      final sent = result['sent'] ?? 0;
+      final failed = result['failed'] ?? 0;
+      final skipped = result['skipped'] ?? 0;
+      final total = result['total'] ?? 0;
+      ArkaSnack.success(
+        context,
+        'Emailed $sent of $total · failed $failed · skipped $skipped',
+      );
+      invalidatePayrollData(ref);
+    } catch (e) {
+      if (mounted) ArkaSnack.error(context, e);
+    } finally {
+      if (mounted) setState(() => _emailingPeriod = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final period = ref.watch(payslipPeriodProvider);
@@ -96,6 +175,20 @@ class _HrPayslipsScreenState extends ConsumerState<HrPayslipsScreen> {
                     onChanged: (v) => setState(() => _query = v),
                   ),
                 ),
+                const SizedBox(width: 12),
+                FilledButton.tonalIcon(
+                  onPressed: _emailingPeriod || slips.asData == null
+                      ? null
+                      : () => _emailAll(_visible(slips.asData!.value)),
+                  icon: _emailingPeriod
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.outgoing_mail, size: 18),
+                  label: Text(_emailingPeriod ? 'Sending…' : 'Email all'),
+                ),
               ],
             )
           else ...[
@@ -107,6 +200,23 @@ class _HrPayslipsScreenState extends ConsumerState<HrPayslipsScreen> {
             ArkaSearchField(
               hint: 'Search name or reference',
               onChanged: (v) => setState(() => _query = v),
+            ),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.tonalIcon(
+                onPressed: _emailingPeriod || slips.asData == null
+                    ? null
+                    : () => _emailAll(_visible(slips.asData!.value)),
+                icon: _emailingPeriod
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.outgoing_mail, size: 18),
+                label: Text(_emailingPeriod ? 'Sending…' : 'Email all'),
+              ),
             ),
           ],
           const SizedBox(height: 16),
@@ -182,9 +292,13 @@ class _HrPayslipsScreenState extends ConsumerState<HrPayslipsScreen> {
                             isMine: list[i].userId == me,
                             wide: wide,
                             downloading: _downloading == list[i].id,
+                            emailing: _emailingId == list[i].id,
                             onOpen: () => context.push('/slip/${list[i].id}'),
                             onEdit: () => _edit(list[i]),
                             onDownload: () => _download(list[i]),
+                            onEmail: list[i].canEmail
+                                ? () => _emailOne(list[i])
+                                : null,
                           ).animate().fadeIn(
                               delay: (25 * i.clamp(0, 10)).ms,
                               duration: 220.ms),
@@ -264,18 +378,22 @@ class _SlipCard extends StatelessWidget {
     required this.isMine,
     required this.wide,
     required this.downloading,
+    required this.emailing,
     required this.onOpen,
     required this.onEdit,
     required this.onDownload,
+    this.onEmail,
   });
 
   final PeriodSlipRow row;
   final bool isMine;
   final bool wide;
   final bool downloading;
+  final bool emailing;
   final VoidCallback onOpen;
   final VoidCallback onEdit;
   final VoidCallback onDownload;
+  final VoidCallback? onEmail;
 
   @override
   Widget build(BuildContext context) {
@@ -283,6 +401,22 @@ class _SlipCard extends StatelessWidget {
     final actions = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (onEmail != null)
+          IconButton(
+            tooltip: row.emailSent ? 'Resend email' : 'Send email',
+            onPressed: emailing ? null : onEmail,
+            icon: emailing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : Icon(
+                    row.emailSent
+                        ? Icons.mark_email_read_outlined
+                        : Icons.outgoing_mail,
+                    size: 20,
+                  ),
+          ),
         IconButton(
             tooltip: 'Edit slip',
             onPressed: onEdit,
