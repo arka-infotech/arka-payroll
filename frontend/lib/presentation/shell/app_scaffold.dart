@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:arka_payroll/core/layout/arka_layout.dart';
 import 'package:arka_payroll/core/role_labels.dart';
 import 'package:arka_payroll/core/theme/arka_theme.dart';
 import 'package:arka_payroll/providers/app_providers.dart';
@@ -63,8 +64,8 @@ class AppScaffold extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authStateProvider);
-    final width = MediaQuery.sizeOf(context).width;
-    final wide = width >= 900;
+    final width = context.arkaWidth;
+    final wide = context.isDesktop;
     final loc = GoRouterState.of(context).matchedLocation;
 
     // Admin-only app — Super Admin gets Root; everyone else with access is HR.
@@ -90,7 +91,7 @@ class AppScaffold extends ConsumerWidget {
               _Sidebar(
                 destinations: destinations,
                 selected: selected,
-                extended: width >= 1180,
+                extended: width >= ArkaBreakpoints.desktopWide,
               ),
               VerticalDivider(width: 1, color: context.cs.outlineVariant),
               Expanded(
@@ -129,17 +130,21 @@ class AppScaffold extends ConsumerWidget {
       );
     }
 
-    // ── Phone ───────────────────────────────────────────────────────────────
+    // ── Phone / tablet (no sidebar) ─────────────────────────────────────────
     final showBottomNav = showNav && destinations.length > 1;
+    final dense = context.isDense;
+    final manyTabs = destinations.length >= 5;
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 64,
-        title: titleWidget ?? Text(title),
+        toolbarHeight: dense ? 52 : 56,
+        titleSpacing: dense ? 8 : 12,
+        title: titleWidget ??
+            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           ...?actions,
           const ArkaThemeToggle(),
           const ArkaLogoutButton(),
-          const SizedBox(width: 6),
+          SizedBox(width: dense ? 2 : 4),
         ],
       ),
       floatingActionButton: floatingActionButton,
@@ -160,7 +165,11 @@ class AppScaffold extends ConsumerWidget {
                     Border(top: BorderSide(color: context.cs.outlineVariant)),
               ),
               child: NavigationBar(
-                selectedIndex: selected,
+                height: dense || manyTabs ? 64 : 72,
+                labelBehavior: manyTabs || dense || context.isCompact
+                    ? NavigationDestinationLabelBehavior.onlyShowSelected
+                    : NavigationDestinationLabelBehavior.alwaysShow,
+                selectedIndex: selected.clamp(0, destinations.length - 1),
                 onDestinationSelected: (i) => context.go(destinations[i].path),
                 destinations: [
                   for (final d in destinations)

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:arka_payroll/core/layout/arka_layout.dart';
 import 'package:arka_payroll/core/role_labels.dart';
 import 'package:arka_payroll/core/theme/arka_theme.dart';
 import 'package:arka_payroll/presentation/shell/app_scaffold.dart';
@@ -53,7 +54,7 @@ class _EmployeesScreenState extends ConsumerState<EmployeesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width >= 900;
+    final wide = context.isDesktop;
     final users = ref.watch(employeesProvider);
 
     return AppScaffold(
@@ -169,7 +170,7 @@ class _EmployeesScreenState extends ConsumerState<EmployeesScreen> {
         _PeopleFilter.all => 'All',
         _PeopleFilter.admins => 'Admins',
         _PeopleFilter.employees => 'Employees',
-        _PeopleFilter.noPay => 'No pay package',
+        _PeopleFilter.noPay => 'No pay',
       };
 }
 
@@ -239,9 +240,10 @@ class _PersonCard extends StatelessWidget {
                           : Icons.badge_outlined,
                     ),
                     if (u['salaryStructure'] == null)
-                      const ArkaStatusChip('No pay package',
+                      const ArkaStatusChip('No pay',
                           tone: ArkaTone.warning,
-                          icon: Icons.warning_amber_rounded),
+                          icon: Icons.warning_amber_rounded,
+                          compact: true),
                     if (status != 'ACTIVE')
                       ArkaStatusChip(Fmt.titleCase(status),
                           tone: ArkaTone.danger),

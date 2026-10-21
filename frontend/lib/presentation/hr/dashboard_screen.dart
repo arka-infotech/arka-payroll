@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:arka_payroll/core/layout/arka_layout.dart';
 import 'package:arka_payroll/core/role_labels.dart';
 import 'package:arka_payroll/core/theme/arka_theme.dart';
 import 'package:arka_payroll/data/payroll/payroll_repository.dart';
@@ -31,17 +32,24 @@ class DashboardScreen extends ConsumerWidget {
           '${_greeting()}, $firstName · ${RoleLabels.display(user?.role)}',
       titleWidget: Row(
         children: [
-          ArkaAvatar(user?.fullName ?? firstName, size: 40),
-          const SizedBox(width: 12),
+          ArkaAvatar(user?.fullName ?? firstName,
+              size: context.isDense ? 34 : 40),
+          SizedBox(width: context.isDense ? 8 : 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(_greeting(), style: context.tt.bodySmall),
+                Text(_greeting(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.tt.bodySmall),
                 Text(firstName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: context.tt.titleLarge),
+                    style: context.isDense
+                        ? context.tt.titleMedium
+                        : context.tt.titleLarge),
               ],
             ),
           ),
@@ -79,7 +87,8 @@ class _DashboardBody extends StatelessWidget {
         _PayrollHero(data: d),
         const SizedBox(height: 16),
         ArkaAdaptiveGrid(
-          minItemWidth: 150,
+          minItemWidth: 140,
+          gap: 10,
           children: [
             ArkaStatTile(
               label: 'Active people',
@@ -173,7 +182,7 @@ class _PayrollHero extends StatelessWidget {
             child: _Ring(size: 180, alpha: 0.05),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
+            padding: EdgeInsets.all(context.isDense ? 16 : 22),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -182,6 +191,8 @@ class _PayrollHero extends StatelessWidget {
                     Expanded(
                       child: Text(
                         period.label.toUpperCase(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: context.tt.labelSmall
                             ?.copyWith(color: white70, letterSpacing: 1.2),
                       ),
@@ -189,7 +200,7 @@ class _PayrollHero extends StatelessWidget {
                     ArkaLiveIndicator(updatedAt: data.fetchedAt, onDark: true),
                   ],
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 14),
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
@@ -197,26 +208,35 @@ class _PayrollHero extends StatelessWidget {
                     Fmt.inr0(data.totalNet),
                     style: context.tt.headlineMedium?.copyWith(
                       color: Colors.white,
-                      fontSize: 36,
+                      fontSize: context.isDense ? 28 : 36,
                       letterSpacing: -1,
                     ),
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Net payout across ${data.slips.length} slip${data.slips.length == 1 ? '' : 's'} this month',
+                  context.useShortLabels
+                      ? '${data.slips.length} slip${data.slips.length == 1 ? '' : 's'} this month'
+                      : 'Net payout across ${data.slips.length} slip${data.slips.length == 1 ? '' : 's'} this month',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: context.tt.bodyMedium?.copyWith(color: white70),
                 ),
-                const SizedBox(height: 22),
+                const SizedBox(height: 18),
                 Row(
                   children: [
                     Expanded(
                       child: Text(
-                        '${data.processedThisMonth} of ${data.activeEmployees} employees processed',
+                        context.useShortLabels
+                            ? '${data.processedThisMonth}/${data.activeEmployees} processed'
+                            : '${data.processedThisMonth} of ${data.activeEmployees} employees processed',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: context.tt.labelMedium
                             ?.copyWith(color: Colors.white),
                       ),
                     ),
+                    const SizedBox(width: 8),
                     Text('$pct%',
                         style: context.tt.labelLarge
                             ?.copyWith(color: Colors.white)),
@@ -240,29 +260,43 @@ class _PayrollHero extends StatelessWidget {
                 const SizedBox(height: 22),
                 LayoutBuilder(
                   builder: (context, c) {
-                    final narrow = c.maxWidth < 480;
+                    // Stack CTAs when the hero itself is narrow — not device model.
+                    final stack = c.maxWidth < 420 || context.arkaTextScale > 1.15;
+                    final short = stack || context.useShortLabels;
                     final punch = FilledButton.icon(
                       style: FilledButton.styleFrom(
                         backgroundColor: Colors.white,
                         foregroundColor: ArkaColors.navy,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        padding: EdgeInsets.symmetric(
+                            horizontal: short ? 10 : 16),
                       ),
                       onPressed: () => context.go('/punch'),
                       icon: const Icon(Icons.payments_rounded, size: 20),
-                      label: const Text('Punch salary'),
+                      label: Text(short ? 'Punch' : 'Punch salary'),
                     );
                     final slips = OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        padding: EdgeInsets.symmetric(
+                            horizontal: short ? 10 : 16),
                         side: BorderSide(
                             color: Colors.white.withValues(alpha: 0.45)),
                       ),
                       onPressed: () => context.go('/payslips'),
                       icon: const Icon(Icons.receipt_long_rounded, size: 20),
-                      label: Text(narrow ? 'Payslips' : 'View payslips'),
+                      label: Text(short ? 'Slips' : 'View payslips'),
                     );
-                    if (narrow) {
+                    if (stack) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          punch,
+                          const SizedBox(height: 10),
+                          slips,
+                        ],
+                      );
+                    }
+                    if (c.maxWidth < 560) {
                       return Row(
                         children: [
                           Expanded(child: punch),
@@ -444,8 +478,9 @@ class _RecentRow extends StatelessWidget {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    ArkaStatusChip(label, tone: tone, dot: true),
-                    const SizedBox(width: 6),
+                    ArkaStatusChip(label,
+                        tone: tone, dot: true, compact: true),
+                    const SizedBox(width: 4),
                     SlipEmailStatusIcon(
                       status: slip.emailStatus,
                       expectEmail: slip.status == 'LOCKED' ||

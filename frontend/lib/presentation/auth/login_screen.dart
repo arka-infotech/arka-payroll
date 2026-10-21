@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:arka_payroll/core/config/app_config.dart';
+import 'package:arka_payroll/core/layout/arka_layout.dart';
 import 'package:arka_payroll/core/theme/arka_theme.dart';
 import 'package:arka_payroll/presentation/widgets/aips_logo.dart';
 import 'package:arka_payroll/presentation/widgets/arka_error_view.dart';
@@ -36,7 +37,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authStateProvider);
-    final wide = MediaQuery.sizeOf(context).width >= 960;
+    final wide = context.arkaWidth >= ArkaBreakpoints.desktopWide;
     final p = context.palette;
 
     final form = Form(

@@ -154,7 +154,7 @@ class _UsersTab extends ConsumerWidget {
               ),
               const SizedBox(height: 12),
               ArkaAdaptiveGrid(
-                minItemWidth: 360,
+                minItemWidth: 300,
                 maxColumns: 2,
                 gap: 10,
                 children: [

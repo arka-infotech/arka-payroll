@@ -5,6 +5,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:printing/printing.dart';
+import 'package:arka_payroll/core/layout/arka_layout.dart';
 import 'package:arka_payroll/core/theme/arka_theme.dart';
 import 'package:arka_payroll/data/payroll/payroll_repository.dart';
 import 'package:arka_payroll/presentation/shell/app_scaffold.dart';
@@ -147,7 +148,7 @@ class _HrPayslipsScreenState extends ConsumerState<HrPayslipsScreen> {
     final period = ref.watch(payslipPeriodProvider);
     final slips = ref.watch(periodSlipsProvider);
     final me = ref.watch(authStateProvider).user?.id;
-    final wide = MediaQuery.sizeOf(context).width >= 900;
+    final wide = context.isDesktop;
 
     return AppScaffold(
       title: 'Payslips',
@@ -202,8 +203,9 @@ class _HrPayslipsScreenState extends ConsumerState<HrPayslipsScreen> {
               onChanged: (v) => setState(() => _query = v),
             ),
             const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerLeft,
+            SizedBox(
+              width: double.infinity,
+              height: 44,
               child: FilledButton.tonalIcon(
                 onPressed: _emailingPeriod || slips.asData == null
                     ? null
@@ -398,7 +400,7 @@ class _SlipCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (tone, label) = slipStatusTone(row.status);
-    final actions = Row(
+    final desktopActions = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         if (onEmail != null)
@@ -437,6 +439,76 @@ class _SlipCard extends StatelessWidget {
         ),
       ],
     );
+    final phoneMenu = PopupMenuButton<_SlipAction>(
+      tooltip: 'Actions',
+      enabled: !emailing && !downloading,
+      onSelected: (a) {
+        switch (a) {
+          case _SlipAction.email:
+            onEmail?.call();
+          case _SlipAction.edit:
+            onEdit();
+          case _SlipAction.open:
+            onOpen();
+          case _SlipAction.download:
+            onDownload();
+        }
+      },
+      itemBuilder: (_) => [
+        if (onEmail != null)
+          PopupMenuItem(
+            value: _SlipAction.email,
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                row.emailSent
+                    ? Icons.mark_email_read_outlined
+                    : Icons.outgoing_mail,
+                size: 20,
+              ),
+              title: Text(row.emailSent ? 'Resend email' : 'Send email'),
+            ),
+          ),
+        const PopupMenuItem(
+          value: _SlipAction.edit,
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.edit_outlined, size: 20),
+            title: Text('Edit slip'),
+          ),
+        ),
+        const PopupMenuItem(
+          value: _SlipAction.open,
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.visibility_outlined, size: 20),
+            title: Text('Open PDF'),
+          ),
+        ),
+        const PopupMenuItem(
+          value: _SlipAction.download,
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.download_rounded, size: 20),
+            title: Text('Download'),
+          ),
+        ),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: emailing || downloading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2))
+            : Icon(Icons.more_vert_rounded,
+                color: context.cs.onSurfaceVariant),
+      ),
+    );
     final identity = Expanded(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -450,8 +522,9 @@ class _SlipCard extends StatelessWidget {
                     style: context.tt.titleMedium),
               ),
               if (isMine) ...[
-                const SizedBox(width: 8),
-                const ArkaStatusChip('You', tone: ArkaTone.info, dot: false),
+                const SizedBox(width: 6),
+                const ArkaStatusChip('You',
+                    tone: ArkaTone.info, dot: false, compact: true),
               ],
             ],
           ),
@@ -463,15 +536,19 @@ class _SlipCard extends StatelessWidget {
         ],
       ),
     );
-    final amount = Text(Fmt.inr(row.netPay), style: context.tt.titleMedium);
-    final chip = ArkaStatusChip(label, tone: tone, dot: true);
+    final amount = Text(Fmt.inr(row.netPay),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: context.tt.titleMedium);
+    final chip =
+        ArkaStatusChip(label, tone: tone, dot: true, compact: !wide);
     final expectEmail = row.status == 'LOCKED' ||
         row.status == 'PROCESSED' ||
         row.status == 'PAID';
     final statusRow = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        chip,
+        Flexible(child: chip),
         if (expectEmail || row.emailStatus != null) ...[
           const SizedBox(width: 6),
           SlipEmailStatusIcon(
@@ -486,7 +563,7 @@ class _SlipCard extends StatelessWidget {
 
     return ArkaCard(
       onTap: onOpen,
-      padding: EdgeInsets.fromLTRB(16, 12, wide ? 8 : 6, wide ? 12 : 6),
+      padding: EdgeInsets.fromLTRB(14, 12, wide ? 8 : 4, wide ? 12 : 8),
       child: wide
           ? Row(
               children: [
@@ -502,27 +579,26 @@ class _SlipCard extends StatelessWidget {
                     child:
                         Align(alignment: Alignment.centerRight, child: amount)),
                 const SizedBox(width: 12),
-                actions,
+                desktopActions,
               ],
             )
           : Column(
               children: [
                 Row(
                   children: [
-                    ArkaAvatar(row.employeeName, size: 42),
-                    const SizedBox(width: 12),
+                    ArkaAvatar(row.employeeName, size: 40),
+                    const SizedBox(width: 10),
                     identity,
-                    const SizedBox(width: 8),
-                    Padding(
-                        padding: const EdgeInsets.only(right: 10),
-                        child: amount),
+                    const SizedBox(width: 6),
+                    amount,
+                    phoneMenu,
                   ],
                 ),
+                const SizedBox(height: 6),
                 Row(
                   children: [
-                    const SizedBox(width: 54),
+                    const SizedBox(width: 50),
                     Expanded(child: statusRow),
-                    actions,
                   ],
                 ),
               ],
@@ -530,3 +606,5 @@ class _SlipCard extends StatelessWidget {
     );
   }
 }
+
+enum _SlipAction { email, edit, open, download }

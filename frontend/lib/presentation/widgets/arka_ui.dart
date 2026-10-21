@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:arka_payroll/core/layout/arka_layout.dart';
 import 'package:arka_payroll/core/theme/arka_theme.dart';
 import 'package:arka_payroll/presentation/widgets/arka_error_view.dart';
 import 'package:arka_payroll/providers/app_providers.dart';
@@ -180,18 +181,30 @@ class SlipEmailStatusIcon extends StatelessWidget {
 
 class ArkaStatusChip extends StatelessWidget {
   const ArkaStatusChip(this.label,
-      {super.key, this.tone = ArkaTone.neutral, this.icon, this.dot = false});
+      {super.key,
+      this.tone = ArkaTone.neutral,
+      this.icon,
+      this.dot = false,
+      this.compact = false});
 
   final String label;
   final ArkaTone tone;
   final IconData? icon;
   final bool dot;
 
+  /// Tighter padding / smaller type for dense phone list tiles.
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
     final c = ToneColors.of(context, tone);
+    final dense = compact || context.isDense;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      constraints: BoxConstraints(maxWidth: dense ? 110 : 160),
+      padding: EdgeInsets.symmetric(
+        horizontal: dense ? 7 : 9,
+        vertical: dense ? 3 : 4,
+      ),
       decoration: BoxDecoration(
         color: c.bg,
         borderRadius: BorderRadius.circular(999),
@@ -208,18 +221,22 @@ class ArkaStatusChip extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
             ),
-            const SizedBox(width: 6),
+            SizedBox(width: dense ? 4 : 6),
           ],
           if (icon != null) ...[
-            Icon(icon, size: 13, color: c.fg),
+            Icon(icon, size: dense ? 12 : 13, color: c.fg),
             const SizedBox(width: 4),
           ],
-          Text(
-            label,
-            style: context.tt.labelMedium?.copyWith(
-              color: c.fg,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.tt.labelMedium?.copyWith(
+                color: c.fg,
+                fontSize: dense ? 10.5 : 11.5,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -400,25 +417,29 @@ class ArkaStatTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ArkaCard(
       onTap: onTap,
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(context.isDense ? 12 : 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              ArkaIconBadge(icon, tone: tone, size: 36),
+              ArkaIconBadge(icon,
+                  tone: tone, size: context.isDense ? 32 : 36),
               const Spacer(),
               if (onTap != null)
                 Icon(Icons.arrow_outward_rounded,
                     size: 18, color: context.cs.onSurfaceVariant),
             ],
           ),
-          const SizedBox(height: 14),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: context.tt.headlineSmall?.copyWith(height: 1.1),
+          SizedBox(height: context.isDense ? 10 : 14),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              maxLines: 1,
+              style: context.tt.headlineSmall?.copyWith(height: 1.1),
+            ),
           ),
           const SizedBox(height: 4),
           Text(label,
@@ -457,7 +478,11 @@ class ArkaAdaptiveGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, c) {
-        final cols = ((c.maxWidth + gap) / (minItemWidth + gap))
+        // Prefer fewer columns over crushed tiles on small / scaled phones.
+        final minW = context.isCompact
+            ? (minItemWidth * 0.85).clamp(120.0, minItemWidth)
+            : minItemWidth.toDouble();
+        final cols = ((c.maxWidth + gap) / (minW + gap))
             .floor()
             .clamp(1, maxColumns);
         final w = (c.maxWidth - gap * (cols - 1)) / cols;
@@ -758,9 +783,15 @@ class _ArkaLiveIndicatorState extends State<ArkaLiveIndicator> {
             .animate(onPlay: (c) => c.repeat(reverse: true))
             .fade(begin: 1, end: 0.35, duration: 900.ms),
         const SizedBox(width: 6),
-        Text(
-          'Live · updated ${Fmt.ago(widget.updatedAt)}',
-          style: context.tt.labelMedium?.copyWith(color: fg),
+        Flexible(
+          child: Text(
+            context.useShortLabels
+                ? 'Live · ${Fmt.ago(widget.updatedAt)}'
+                : 'Live · updated ${Fmt.ago(widget.updatedAt)}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: context.tt.labelMedium?.copyWith(color: fg),
+          ),
         ),
       ],
     );
@@ -811,33 +842,47 @@ class ArkaFormSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dense = context.isDense;
     return ArkaCard(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
+      padding: EdgeInsets.fromLTRB(
+        dense ? 14 : 18,
+        dense ? 14 : 18,
+        dense ? 14 : 18,
+        dense ? 16 : 20,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (icon != null) ...[
-                ArkaIconBadge(icon!, tone: ArkaTone.info, size: 36),
-                const SizedBox(width: 12),
+                ArkaIconBadge(icon!,
+                    tone: ArkaTone.info, size: dense ? 32 : 36),
+                SizedBox(width: dense ? 10 : 12),
               ],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: context.tt.titleMedium),
+                    Text(title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.tt.titleMedium),
                     if (subtitle != null) ...[
                       const SizedBox(height: 2),
-                      Text(subtitle!, style: context.tt.bodySmall),
+                      Text(subtitle!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.tt.bodySmall),
                     ],
                   ],
                 ),
               ),
-              if (trailing != null) trailing!,
+              if (trailing != null) Flexible(child: trailing!),
             ],
           ),
-          const SizedBox(height: 18),
+          SizedBox(height: dense ? 14 : 18),
           ...children,
         ],
       ),
@@ -850,7 +895,7 @@ class ArkaFieldRow extends StatelessWidget {
   const ArkaFieldRow(
       {super.key,
       required this.children,
-      this.breakpoint = 560,
+      this.breakpoint = ArkaBreakpoints.phone,
       this.gap = 12});
 
   final List<Widget> children;
@@ -936,8 +981,8 @@ class ArkaBottomBar extends StatelessWidget {
   Widget build(BuildContext context) {
     // Phones get full-width thumb-friendly buttons; desktop keeps them
     // compact and right-aligned with the page content.
-    final wide = MediaQuery.sizeOf(context).width >= 900;
-    final h = wide ? 28.0 : 16.0;
+    final wide = context.isDesktop;
+    final h = wide ? 28.0 : context.pagePadH;
     return Container(
       decoration: BoxDecoration(
         color: context.cs.surface,
@@ -950,19 +995,24 @@ class ArkaBottomBar extends StatelessWidget {
             constraints:
                 BoxConstraints(maxWidth: wide ? 1240 : double.infinity),
             child: Padding(
-              padding: EdgeInsets.fromLTRB(h, 12, h, 12),
+              padding: EdgeInsets.fromLTRB(h, 10, h, 10),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   for (var i = 0; i < children.length; i++) ...[
-                    if (i > 0) const SizedBox(width: 12),
+                    if (i > 0) SizedBox(width: wide ? 12 : 8),
                     if (wide)
                       ConstrainedBox(
                         constraints: const BoxConstraints(minWidth: 180),
                         child: children[i],
                       )
                     else
-                      Expanded(child: children[i]),
+                      Expanded(
+                        child: SizedBox(
+                          height: context.isCompact ? 42 : 48,
+                          child: children[i],
+                        ),
+                      ),
                   ],
                 ],
               ),
@@ -998,12 +1048,18 @@ class ArkaBusyLabel extends StatelessWidget {
             strokeWidth: 2.2, color: color ?? context.cs.onPrimary),
       );
     }
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (icon != null) ...[Icon(icon, size: 20), const SizedBox(width: 8)],
-        Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
-      ],
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 18),
+            const SizedBox(width: 6),
+          ],
+          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ],
+      ),
     );
   }
 }
@@ -1020,8 +1076,9 @@ class ArkaMonthSwitcher extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = context.cs;
+    final dense = context.isDense;
     return Container(
-      height: 52,
+      height: dense ? 46 : 52,
       decoration: BoxDecoration(
         color: cs.surface,
         borderRadius: BorderRadius.circular(14),
@@ -1031,6 +1088,8 @@ class ArkaMonthSwitcher extends StatelessWidget {
         children: [
           IconButton(
             tooltip: 'Previous month',
+            visualDensity:
+                dense ? VisualDensity.compact : VisualDensity.standard,
             onPressed: () => onChanged(period.previous),
             icon: const Icon(Icons.chevron_left_rounded),
           ),
@@ -1045,16 +1104,18 @@ class ArkaMonthSwitcher extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.calendar_month_rounded,
-                      size: 18, color: cs.onSurfaceVariant),
-                  const SizedBox(width: 8),
+                      size: dense ? 16 : 18, color: cs.onSurfaceVariant),
+                  SizedBox(width: dense ? 6 : 8),
                   Flexible(
                     child: Text(period.label,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: context.tt.titleSmall),
                   ),
                   if (period.isCurrent) ...[
-                    const SizedBox(width: 8),
-                    const ArkaStatusChip('Now', tone: ArkaTone.info),
+                    const SizedBox(width: 6),
+                    const ArkaStatusChip('Now',
+                        tone: ArkaTone.info, compact: true),
                   ],
                 ],
               ),
@@ -1062,6 +1123,8 @@ class ArkaMonthSwitcher extends StatelessWidget {
           ),
           IconButton(
             tooltip: 'Next month',
+            visualDensity:
+                dense ? VisualDensity.compact : VisualDensity.standard,
             onPressed: () => onChanged(period.next),
             icon: const Icon(Icons.chevron_right_rounded),
           ),

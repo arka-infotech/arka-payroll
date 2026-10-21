@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:printing/printing.dart';
+import 'package:arka_payroll/core/layout/arka_layout.dart';
 import 'package:arka_payroll/core/parse_api_num.dart';
 import 'package:arka_payroll/core/theme/arka_theme.dart';
 import 'package:arka_payroll/data/payroll/payroll_repository.dart';
@@ -14,7 +15,7 @@ import 'package:arka_payroll/providers/app_providers.dart';
 (ArkaTone, String) _rowStatus(PayrollGridRow r) {
   if (r.isLocked) return (ArkaTone.success, 'Locked');
   if (r.existingStatus == 'DRAFT') return (ArkaTone.warning, 'Draft');
-  if (!r.hasStructure) return (ArkaTone.danger, 'No pay package');
+  if (!r.hasStructure) return (ArkaTone.danger, 'No pay');
   return (ArkaTone.info, 'Ready');
 }
 
@@ -80,8 +81,7 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
     final current = rows.where((r) => r.userId == _selectedId).firstOrNull;
     if (current == null) {
       // Wide: keep a selection for the detail pane. Narrow: list-only until tap.
-      final wide = MediaQuery.sizeOf(context).width >= 1000;
-      if (wide) {
+      if (context.isDesktop) {
         _loadForm(rows.first);
       } else {
         _selectedId = null;
@@ -280,7 +280,8 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
   Widget build(BuildContext context) {
     final period = ref.watch(punchPeriodProvider);
     final grid = ref.watch(payrollGridProvider);
-    final wide = MediaQuery.sizeOf(context).width >= 1000;
+    final wide = context.isDesktop;
+    final short = context.useShortLabels;
 
     final rows = grid.value ?? const <PayrollGridRow>[];
     final selected = rows.where((r) => r.userId == _selectedId).firstOrNull;
@@ -293,19 +294,19 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
     final showEditor = wide || (_mobileEditing && selected != null);
 
     return AppScaffold(
-      title: 'Punch salary',
-      subtitle: showEditor && selected != null && !wide
+      title: showEditor && selected != null && !wide
           ? selected.name
-          : 'Attendance and variables for ${period.label}',
+          : 'Punch salary',
+      subtitle: 'Attendance and variables for ${period.label}',
       bottomBar: !showEditor || selected == null
           ? null
           : ArkaBottomBar(
               children: [
                 OutlinedButton(
                   onPressed: _busy ? null : () => _saveDraft(selected),
-                  child: const ArkaBusyLabel(
+                  child: ArkaBusyLabel(
                       busy: false,
-                      label: 'Save draft',
+                      label: short ? 'Draft' : 'Save draft',
                       icon: Icons.save_outlined),
                 ),
                 FilledButton(
@@ -314,8 +315,9 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
                       : () => _preview(selected),
                   child: ArkaBusyLabel(
                     busy: _busy,
-                    label:
-                        selected.isLocked ? 'Recalculate' : 'Calculate & lock',
+                    label: selected.isLocked
+                        ? (short ? 'Update' : 'Recalculate')
+                        : (short ? 'Lock' : 'Calculate & lock'),
                     icon: Icons.lock_outline_rounded,
                   ),
                 ),
@@ -456,6 +458,7 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
 
   /// Form blocks, each preceded by spacing so they slot into any list.
   List<Widget> _form(PayrollGridRow s, bool wide) {
+    final short = context.useShortLabels;
     final lopEstimate = _lopEstimate(s);
     final ctc = s.monthlyCtc?.toDouble();
     final bonus = double.tryParse(_bonusCtrl.text) ?? 0;
@@ -571,11 +574,11 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
             _lopCtrl.text = '0';
             setState(() => _validateDays(s));
           },
-          child: const Text('Full month'),
+          child: Text(short ? 'Full' : 'Full month'),
         ),
         children: [
           ArkaFieldRow(
-            breakpoint: 420,
+            breakpoint: ArkaBreakpoints.phone,
             children: [
               TextField(
                 controller: _daysCtrl,
@@ -616,7 +619,7 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
         subtitle: 'One-off amounts for this month only',
         children: [
           ArkaFieldRow(
-            breakpoint: 420,
+            breakpoint: ArkaBreakpoints.phone,
             children: [
               TextField(
                 controller: _bonusCtrl,
@@ -684,7 +687,7 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     int count(String label) =>
         rows.where((r) => _rowStatus(r).$2 == label).length;
-    final missing = count('No pay package');
+    final missing = count('No pay');
     final chips = [
       ArkaStatusChip('${count('Locked')} locked',
           tone: ArkaTone.success, dot: true),
@@ -692,16 +695,15 @@ class _Header extends StatelessWidget {
           tone: ArkaTone.warning, dot: true),
       ArkaStatusChip('${count('Ready')} ready', tone: ArkaTone.info, dot: true),
       if (missing > 0)
-        ArkaStatusChip('$missing need pay package',
-            tone: ArkaTone.danger, dot: true),
+        ArkaStatusChip('$missing no pay', tone: ArkaTone.danger, dot: true),
     ];
     final switcher = ArkaMonthSwitcher(period: period, onChanged: onPeriod);
 
     if (wide) {
       return Row(
         children: [
-          SizedBox(width: 330, child: switcher),
-          const SizedBox(width: 20),
+          SizedBox(width: 300, child: switcher),
+          const SizedBox(width: 16),
           Expanded(child: Wrap(spacing: 8, runSpacing: 8, children: chips)),
         ],
       );
@@ -709,10 +711,10 @@ class _Header extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
         switcher,
-        const SizedBox(height: 12),
-        Wrap(spacing: 8, runSpacing: 8, children: chips),
+        const SizedBox(height: 10),
+        Wrap(spacing: 6, runSpacing: 6, children: chips),
       ],
     );
   }
@@ -785,28 +787,22 @@ class _EmployeeListState extends State<_EmployeeList> {
                       if (r.unpaidLeaveDays > 0) 'LOP ${r.unpaidLeaveDays}',
                     ].join(' · ');
                     return Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
+                      padding: const EdgeInsets.only(bottom: 2),
                       child: ListTile(
+                        dense: true,
                         selected: r.userId == widget.selectedId,
                         onTap: () => widget.onSelect(r),
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 2),
-                        leading: ArkaAvatar(r.name, size: 40),
+                            horizontal: 8, vertical: 0),
+                        leading: ArkaAvatar(r.name, size: 36),
                         title: Text(r.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: context.tt.titleSmall),
                         subtitle: Text(sub.isEmpty ? '—' : sub,
                             maxLines: 1, overflow: TextOverflow.ellipsis),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ArkaStatusChip(label, tone: tone),
-                            const SizedBox(width: 4),
-                            Icon(Icons.chevron_right_rounded,
-                                color: context.cs.onSurfaceVariant),
-                          ],
-                        ),
+                        trailing: ArkaStatusChip(label,
+                            tone: tone, compact: true, dot: true),
                       ),
                     );
                   },

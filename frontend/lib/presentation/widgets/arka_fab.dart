@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:arka_payroll/core/layout/arka_layout.dart';
 
 /// Primary floating action — consistent placement and styling.
 class ArkaAddFab extends StatelessWidget {
@@ -16,13 +17,22 @@ class ArkaAddFab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FloatingActionButton.extended(
-      heroTag: label,
-      extendedPadding: const EdgeInsets.symmetric(horizontal: 20),
-      onPressed: onPressed,
-      icon: Icon(icon, size: 22),
-      label: Text(label),
-    ).animate().fadeIn(duration: 320.ms).scale(
+    final fab = context.isCompact
+        ? FloatingActionButton(
+            heroTag: label,
+            tooltip: label,
+            onPressed: onPressed,
+            child: Icon(icon, size: 22),
+          )
+        : FloatingActionButton.extended(
+            heroTag: label,
+            extendedPadding: const EdgeInsets.symmetric(horizontal: 20),
+            onPressed: onPressed,
+            icon: Icon(icon, size: 22),
+            label: Text(label),
+          );
+
+    return fab.animate().fadeIn(duration: 320.ms).scale(
           begin: const Offset(0.92, 0.92),
           end: const Offset(1, 1),
           duration: 320.ms,
@@ -42,19 +52,10 @@ class ArkaPagePadding extends StatelessWidget {
   final Widget child;
   final bool hasFab;
 
-  static double horizontal(BuildContext context) =>
-      MediaQuery.sizeOf(context).width >= 900 ? 28 : 16;
+  static double horizontal(BuildContext context) => context.pagePadH;
 
-  static EdgeInsets of(BuildContext context, {bool hasFab = false}) {
-    final wide = MediaQuery.sizeOf(context).width >= 900;
-    final h = horizontal(context);
-    return EdgeInsets.fromLTRB(
-      h,
-      wide ? 4 : 8,
-      h,
-      (wide ? 24 : 16) + (hasFab ? 72 : 0),
-    );
-  }
+  static EdgeInsets of(BuildContext context, {bool hasFab = false}) =>
+      context.pagePadding(hasFab: hasFab);
 
   @override
   Widget build(BuildContext context) {

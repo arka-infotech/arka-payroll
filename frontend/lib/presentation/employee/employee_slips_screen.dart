@@ -267,7 +267,13 @@ class _SlipRow extends StatelessWidget {
               ],
             ),
           ),
-          Text(Fmt.inr(slip.netPay), style: context.tt.titleSmall),
+          Flexible(
+            child: Text(Fmt.inr(slip.netPay),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: context.tt.titleSmall),
+          ),
           IconButton(
             tooltip: 'Download',
             onPressed: downloading ? null : onDownload,
