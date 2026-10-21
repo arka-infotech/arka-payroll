@@ -52,7 +52,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ],
             Text('Welcome back', style: context.tt.headlineSmall),
             const SizedBox(height: 4),
-            Text('Sign in to ${AppConfig.appTagline.toLowerCase()}',
+            Text('Admin sign-in for ${AppConfig.appTagline.toLowerCase()}',
                 style: context.tt.bodyMedium
                     ?.copyWith(color: context.cs.onSurfaceVariant)),
             const SizedBox(height: 24),

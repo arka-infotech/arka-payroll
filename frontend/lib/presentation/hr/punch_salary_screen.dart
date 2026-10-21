@@ -33,6 +33,9 @@ class PunchSalaryScreen extends ConsumerStatefulWidget {
 class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
   String? _selectedId;
 
+  /// On narrow layouts, list is primary; true when editing one employee.
+  bool _mobileEditing = false;
+
   /// Copy server values into the form on the next data load (after a period
   /// change or a save) — background refreshes never overwrite typing.
   bool _resync = true;
@@ -52,6 +55,7 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
   void initState() {
     super.initState();
     _selectedId = widget.initialUserId;
+    if (widget.initialUserId != null) _mobileEditing = true;
     final y = widget.initialYear;
     final m = widget.initialMonth;
     if (y != null && m != null) {
@@ -75,13 +79,21 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
     if (!mounted || rows.isEmpty) return;
     final current = rows.where((r) => r.userId == _selectedId).firstOrNull;
     if (current == null) {
-      _select(rows.first);
+      // Wide: keep a selection for the detail pane. Narrow: list-only until tap.
+      final wide = MediaQuery.sizeOf(context).width >= 1000;
+      if (wide) {
+        _loadForm(rows.first);
+      } else {
+        _selectedId = null;
+        _mobileEditing = false;
+        if (mounted) setState(() {});
+      }
     } else if (_resync) {
-      _select(current);
+      _loadForm(current);
     }
   }
 
-  void _select(PayrollGridRow s) {
+  void _loadForm(PayrollGridRow s) {
     _resync = false;
     _selectedId = s.userId;
     _formError = null;
@@ -93,6 +105,20 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
     _notesCtrl.text = s.slipNotes ?? '';
     _validateDays(s);
     if (mounted) setState(() {});
+  }
+
+  void _openEmployee(PayrollGridRow s, {required bool wide}) {
+    _loadForm(s);
+    if (!wide) {
+      setState(() => _mobileEditing = true);
+    }
+  }
+
+  void _closeMobileEditor() {
+    setState(() {
+      _mobileEditing = false;
+      _formError = null;
+    });
   }
 
   void _validateDays(PayrollGridRow s) {
@@ -117,6 +143,7 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
 
   void _changePeriod(PayPeriod p) {
     _resync = true;
+    _mobileEditing = false;
     ref.read(punchPeriodProvider.notifier).set(p);
   }
 
@@ -249,26 +276,6 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
     }
   }
 
-  Future<void> _pickEmployee(List<PayrollGridRow> rows) async {
-    final picked = await showModalBottomSheet<PayrollGridRow>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.75,
-        maxChildSize: 0.95,
-        builder: (ctx, scroll) => _EmployeeList(
-          rows: rows,
-          selectedId: _selectedId,
-          onSelect: (r) => Navigator.pop(ctx, r),
-          scrollController: scroll,
-        ),
-      ),
-    );
-    if (picked != null) _select(picked);
-  }
-
   @override
   Widget build(BuildContext context) {
     final period = ref.watch(punchPeriodProvider);
@@ -277,14 +284,20 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
 
     final rows = grid.value ?? const <PayrollGridRow>[];
     final selected = rows.where((r) => r.userId == _selectedId).firstOrNull;
-    if (rows.isNotEmpty && !grid.isLoading && (selected == null || _resync)) {
+    if (rows.isNotEmpty &&
+        !grid.isLoading &&
+        ((wide && selected == null) || _resync)) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _applyRows(rows));
     }
 
+    final showEditor = wide || (_mobileEditing && selected != null);
+
     return AppScaffold(
       title: 'Punch salary',
-      subtitle: 'Attendance and variables for ${period.label}',
-      bottomBar: selected == null
+      subtitle: showEditor && selected != null && !wide
+          ? selected.name
+          : 'Attendance and variables for ${period.label}',
+      bottomBar: !showEditor || selected == null
           ? null
           : ArkaBottomBar(
               children: [
@@ -330,6 +343,46 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
               ],
             );
           }
+
+          // Narrow: full-screen editor after tapping a list row.
+          if (!wide && _mobileEditing && selected != null) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 4),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: IconButton(
+                    tooltip: 'Back to list',
+                    onPressed: _closeMobileEditor,
+                    icon: const Icon(Icons.arrow_back_rounded),
+                  ),
+                  title: Text(selected.name, style: context.tt.titleMedium),
+                  subtitle: Text(
+                    [
+                      selected.designation ?? 'Employee',
+                      if (selected.employeeCode != null) selected.employeeCode!,
+                    ].join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: ArkaStatusChip(
+                    _rowStatus(selected).$2,
+                    tone: _rowStatus(selected).$1,
+                    dot: true,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.only(bottom: 24),
+                    children: _form(selected, false),
+                  ),
+                ),
+              ],
+            );
+          }
+
           final form =
               selected == null ? const <Widget>[] : _form(selected, wide);
 
@@ -348,16 +401,26 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
                         child: Card(
                           clipBehavior: Clip.antiAlias,
                           child: _EmployeeList(
-                              rows: rows,
-                              selectedId: _selectedId,
-                              onSelect: _select),
+                            rows: rows,
+                            selectedId: _selectedId,
+                            onSelect: (r) => _openEmployee(r, wide: true),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 20),
                       Expanded(
-                          child: ListView(
-                              padding: const EdgeInsets.only(bottom: 24),
-                              children: form)),
+                        child: form.isEmpty
+                            ? const ArkaEmptyState(
+                                icon: Icons.touch_app_outlined,
+                                title: 'Select an employee',
+                                message:
+                                    'Choose someone from the list to set attendance or lock their slip.',
+                              )
+                            : ListView(
+                                padding: const EdgeInsets.only(bottom: 24),
+                                children: form,
+                              ),
+                      ),
                     ],
                   ),
                 ),
@@ -365,17 +428,25 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
             );
           }
 
-          return ListView(
-            padding: const EdgeInsets.only(bottom: 24),
+          // Narrow: employee list is the main screen.
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               header,
-              const SizedBox(height: 14),
-              if (selected != null)
-                _SelectedEmployee(
-                    row: selected,
-                    count: rows.length,
-                    onChange: () => _pickEmployee(rows)),
-              ...form,
+              const SizedBox(height: 12),
+              const _GeneralHint(),
+              const SizedBox(height: 10),
+              Expanded(
+                child: Card(
+                  clipBehavior: Clip.antiAlias,
+                  margin: EdgeInsets.zero,
+                  child: _EmployeeList(
+                    rows: rows,
+                    selectedId: null,
+                    onSelect: (r) => _openEmployee(r, wide: false),
+                  ),
+                ),
+              ),
             ],
           );
         },
@@ -706,6 +777,13 @@ class _EmployeeListState extends State<_EmployeeList> {
                   itemBuilder: (context, i) {
                     final r = list[i];
                     final (tone, label) = _rowStatus(r);
+                    final sub = [
+                      if (r.designation != null && r.designation!.isNotEmpty)
+                        r.designation!,
+                      if (r.employeeCode != null) r.employeeCode!,
+                      '${r.workingDaysInMonth}d',
+                      if (r.unpaidLeaveDays > 0) 'LOP ${r.unpaidLeaveDays}',
+                    ].join(' · ');
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: ListTile(
@@ -718,9 +796,17 @@ class _EmployeeListState extends State<_EmployeeList> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: context.tt.titleSmall),
-                        subtitle: Text(r.designation ?? r.employeeCode ?? '—',
+                        subtitle: Text(sub.isEmpty ? '—' : sub,
                             maxLines: 1, overflow: TextOverflow.ellipsis),
-                        trailing: ArkaStatusChip(label, tone: tone),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ArkaStatusChip(label, tone: tone),
+                            const SizedBox(width: 4),
+                            Icon(Icons.chevron_right_rounded,
+                                color: context.cs.onSurfaceVariant),
+                          ],
+                        ),
                       ),
                     );
                   },
@@ -731,44 +817,16 @@ class _EmployeeListState extends State<_EmployeeList> {
   }
 }
 
-class _SelectedEmployee extends StatelessWidget {
-  const _SelectedEmployee(
-      {required this.row, required this.count, required this.onChange});
-
-  final PayrollGridRow row;
-  final int count;
-  final VoidCallback onChange;
+class _GeneralHint extends StatelessWidget {
+  const _GeneralHint();
 
   @override
   Widget build(BuildContext context) {
-    final (tone, label) = _rowStatus(row);
-    return ArkaCard(
-      onTap: onChange,
-      padding: const EdgeInsets.all(14),
-      child: Row(
-        children: [
-          ArkaAvatar(row.name, size: 46),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(row.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: context.tt.titleMedium),
-                const SizedBox(height: 4),
-                Row(children: [ArkaStatusChip(label, tone: tone, dot: true)]),
-              ],
-            ),
-          ),
-          TextButton.icon(
-            onPressed: onChange,
-            icon: const Icon(Icons.swap_horiz_rounded, size: 18),
-            label: Text('Change ($count)'),
-          ),
-        ],
-      ),
+    return ArkaInlineAlert(
+      tone: ArkaAlertTone.info,
+      title: 'How punch works',
+      message:
+          'Each employee starts from their saved days and amounts for this month. Tap a person to customize attendance, bonus, notes, or lock their slip.',
     );
   }
 }

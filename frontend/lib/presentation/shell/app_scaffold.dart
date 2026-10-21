@@ -55,11 +55,6 @@ class AppScaffold extends ConsumerWidget {
         Icons.receipt_long_rounded, 'Payslips'),
   ];
 
-  static const _employeeDestinations = [
-    _NavItem('/my-slips', Icons.receipt_long_outlined,
-        Icons.receipt_long_rounded, 'Pay'),
-  ];
-
   static const _superDestinations = [
     ..._hrDestinations,
     _NavItem('/admin', Icons.shield_outlined, Icons.shield_rounded, 'Root'),
@@ -72,11 +67,10 @@ class AppScaffold extends ConsumerWidget {
     final wide = width >= 900;
     final loc = GoRouterState.of(context).matchedLocation;
 
+    // Admin-only app — Super Admin gets Root; everyone else with access is HR.
     final destinations = auth.user?.isSuperAdmin == true
         ? _superDestinations
-        : auth.user?.isHr == true
-            ? _hrDestinations
-            : _employeeDestinations;
+        : _hrDestinations;
 
     var selected = destinations.indexWhere((d) => loc.startsWith(d.path));
     if (selected < 0) selected = 0;

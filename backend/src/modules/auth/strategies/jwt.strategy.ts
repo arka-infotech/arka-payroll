@@ -35,6 +35,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Account inactive or not found');
     }
 
+    if (user.role === AppRole.EMPLOYEE) {
+      throw new UnauthorizedException(
+        'Employee login is disabled. Use an Admin account to sign in.',
+      );
+    }
+
     return {
       sub: user.id,
       email: user.email,

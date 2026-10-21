@@ -22,8 +22,15 @@ class AuthState extends ChangeNotifier {
     }
     try {
       user = await _repo.refreshMe();
-      status =
-          user != null ? AuthStatus.authenticated : AuthStatus.unauthenticated;
+      if (user?.isEmployee == true) {
+        await _repo.logout();
+        user = null;
+        status = AuthStatus.unauthenticated;
+      } else {
+        status = user != null
+            ? AuthStatus.authenticated
+            : AuthStatus.unauthenticated;
+      }
     } catch (_) {
       await _repo.logout();
       status = AuthStatus.unauthenticated;
@@ -37,6 +44,16 @@ class AuthState extends ChangeNotifier {
     notifyListeners();
     try {
       user = await _repo.login(email, password);
+      if (user?.isEmployee == true) {
+        await _repo.logout();
+        user = null;
+        error =
+            'Employee login is disabled. Use an Admin account to sign in.';
+        status = AuthStatus.unauthenticated;
+        busy = false;
+        notifyListeners();
+        return false;
+      }
       status = AuthStatus.authenticated;
       busy = false;
       notifyListeners();
