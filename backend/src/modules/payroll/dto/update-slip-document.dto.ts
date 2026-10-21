@@ -46,6 +46,18 @@ export class UpdateSlipDocumentDto {
   @IsString()
   payDate?: string;
 
+  /** Printed pay period range, e.g. "1 Sep 26 - 30 Sep 26". */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  payPeriod?: string;
+
+  /** Header label, e.g. "September 2026". */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  payslipMonth?: string;
+
   @IsInt()
   @Min(0)
   @Max(31)

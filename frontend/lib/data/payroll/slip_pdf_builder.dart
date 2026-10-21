@@ -36,7 +36,14 @@ class SlipPdfBuilder {
     final user = slip['user'] as Map<String, dynamic>? ?? {};
     final year = parseApiNum(slip['year']).toInt();
     final month = parseApiNum(slip['month']).toInt();
-    final period = '${_months[month]} $year';
+    final monthLabel =
+        (doc?['payslipMonth'] as String?)?.trim().isNotEmpty == true
+            ? (doc!['payslipMonth'] as String).trim()
+            : '${_months[month]} $year';
+    final periodRange =
+        (doc?['payPeriod'] as String?)?.trim().isNotEmpty == true
+            ? (doc!['payPeriod'] as String).trim()
+            : _formatPeriodRange(year, month);
 
     final company = (doc?['companyName'] as String?)?.trim().isNotEmpty == true
         ? (doc!['companyName'] as String).trim()
@@ -150,7 +157,7 @@ class SlipPdfBuilder {
                       pw.Text('Payslip For the Month',
                           style: pw.TextStyle(fontSize: 9, color: muted)),
                       pw.SizedBox(height: 2),
-                      pw.Text(period,
+                      pw.Text(monthLabel,
                           style: pw.TextStyle(
                               fontSize: 12,
                               fontWeight: pw.FontWeight.bold,
@@ -176,7 +183,7 @@ class SlipPdfBuilder {
                         pw.SizedBox(height: 10),
                         _kv('Employee Name', employeeName),
                         _kv('Employee ID', employeeCode),
-                        _kv('Pay Period', period),
+                        _kv('Pay Period', periodRange),
                         _kv('Pay Date', payDate),
                       ],
                     ),
@@ -476,6 +483,14 @@ class SlipPdfBuilder {
     final date = DateTime.tryParse(raw);
     if (date == null) return raw;
     return DateFormat('dd/MM/yyyy').format(date.toUtc());
+  }
+
+  /// e.g. 2026, 9 → "1 Sep 26 - 30 Sep 26"
+  static String _formatPeriodRange(int year, int month) {
+    final last = DateTime(year, month + 1, 0).day;
+    final short = DateFormat('MMM').format(DateTime(year, month));
+    final yy = (year % 100).toString().padLeft(2, '0');
+    return '1 $short $yy - $last $short $yy';
   }
 
   static String _inrWords(double amount) {

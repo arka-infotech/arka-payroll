@@ -14,6 +14,7 @@ import { ProcessPayrollDto } from './dto/process-payroll.dto';
 import {
   buildTrackingReference,
   payslipFilename,
+  formatPayslipPeriodRange,
   computeMonthlyPayroll,
   daysInMonth,
   SalaryStructureInput,
@@ -43,30 +44,6 @@ const MONTH_LABELS = [
   'November',
   'December',
 ];
-
-const MONTH_SHORT = [
-  '',
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];
-
-/** e.g. year=2026, month=9 → "1 Sep 26 - 30 Sep 26" */
-function formatPayslipPeriodRange(year: number, month: number): string {
-  const lastDay = new Date(year, month, 0).getDate();
-  const short = MONTH_SHORT[month] ?? String(month);
-  const yy = String(year).slice(-2);
-  return `1 ${short} ${yy} - ${lastDay} ${short} ${yy}`;
-}
 
 @Injectable()
 export class PayrollService {
@@ -840,6 +817,8 @@ export class PayrollService {
       employeeName: dto.employeeName?.trim() || undefined,
       employeeCode: dto.employeeCode?.trim() || undefined,
       payDate: dto.payDate?.trim() || undefined,
+      payPeriod: dto.payPeriod?.trim() || undefined,
+      payslipMonth: dto.payslipMonth?.trim() || undefined,
       paidDays: dto.paidDays,
       lopDays: dto.lopDays,
       notes: dto.notes?.trim() || undefined,

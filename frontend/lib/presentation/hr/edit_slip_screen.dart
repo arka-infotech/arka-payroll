@@ -43,6 +43,8 @@ class _EditSlipScreenState extends ConsumerState<EditSlipScreen> {
   final _name = TextEditingController();
   final _code = TextEditingController();
   final _payDate = TextEditingController();
+  final _payPeriod = TextEditingController();
+  final _payslipMonth = TextEditingController();
   final _paid = TextEditingController();
   final _lop = TextEditingController();
   final _notes = TextEditingController();
@@ -69,6 +71,8 @@ class _EditSlipScreenState extends ConsumerState<EditSlipScreen> {
       _name,
       _code,
       _payDate,
+      _payPeriod,
+      _payslipMonth,
       _paid,
       _lop,
       _notes
@@ -101,6 +105,15 @@ class _EditSlipScreenState extends ConsumerState<EditSlipScreen> {
       _code.text =
           (doc?['employeeCode'] ?? user['employeeCode'] ?? '').toString();
       _payDate.text = _fmtDate(doc?['payDate'] ?? slip['payDate']);
+      final year = parseApiNum(slip['year']).toInt();
+      final month = parseApiNum(slip['month']).toInt();
+      _payPeriod.text = (doc?['payPeriod'] as String?)?.trim().isNotEmpty == true
+          ? (doc!['payPeriod'] as String).trim()
+          : _defaultPeriodRange(year, month);
+      _payslipMonth.text =
+          (doc?['payslipMonth'] as String?)?.trim().isNotEmpty == true
+              ? (doc!['payslipMonth'] as String).trim()
+              : _defaultMonthLabel(year, month);
       _paid.text = '${doc?['paidDays'] ?? slip['daysPayable'] ?? 0}';
       _lop.text = '${doc?['lopDays'] ?? slip['unpaidLeaveDays'] ?? 0}';
       _notes.text = (doc?['notes'] ?? slip['slipNotes'] ?? '').toString();
@@ -143,6 +156,49 @@ class _EditSlipScreenState extends ConsumerState<EditSlipScreen> {
       if (p.length == 3) return '${p[2]}/${p[1]}/${p[0]}';
     }
     return raw;
+  }
+
+  static const _monthNames = [
+    '',
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
+  String _defaultMonthLabel(int year, int month) {
+    final name = month >= 1 && month <= 12 ? _monthNames[month] : '$month';
+    return '$name $year';
+  }
+
+  String _defaultPeriodRange(int year, int month) {
+    final last = DateTime(year, month + 1, 0).day;
+    const shorts = [
+      '',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final short = month >= 1 && month <= 12 ? shorts[month] : '$month';
+    final yy = (year % 100).toString().padLeft(2, '0');
+    return '1 $short $yy - $last $short $yy';
   }
 
   String _toIso(String display) {
@@ -191,6 +247,8 @@ class _EditSlipScreenState extends ConsumerState<EditSlipScreen> {
         'employeeName': _name.text.trim(),
         'employeeCode': _code.text.trim(),
         'payDate': _toIso(_payDate.text),
+        'payPeriod': _payPeriod.text.trim(),
+        'payslipMonth': _payslipMonth.text.trim(),
         'paidDays': int.tryParse(_paid.text) ?? 0,
         'lopDays': int.tryParse(_lop.text) ?? 0,
         'notes': _notes.text.trim(),
@@ -272,6 +330,25 @@ class _EditSlipScreenState extends ConsumerState<EditSlipScreen> {
                         controller: _code,
                         decoration:
                             const InputDecoration(labelText: 'Employee ID')),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ArkaFieldRow(
+                  children: [
+                    TextField(
+                      controller: _payslipMonth,
+                      decoration: const InputDecoration(
+                        labelText: 'Payslip month',
+                        helperText: 'Header on PDF, e.g. September 2026',
+                      ),
+                    ),
+                    TextField(
+                      controller: _payPeriod,
+                      decoration: const InputDecoration(
+                        labelText: 'Pay period',
+                        helperText: 'e.g. 1 Sep 26 - 30 Sep 26',
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),

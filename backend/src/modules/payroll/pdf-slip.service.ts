@@ -6,6 +6,10 @@ import { ConfigService } from '@nestjs/config';
 // `pdfkit_1.default`, which is undefined at runtime under Nest (no esModuleInterop).
 import PDFDocument = require('pdfkit');
 import { toNumber } from './domain/money.util';
+import {
+  formatPayslipMonthLabel,
+  formatPayslipPeriodRange,
+} from './domain/payroll-calculator';
 
 type SlipRow = {
   year: number;
@@ -56,28 +60,14 @@ type SlipDocument = {
   employeeName?: string;
   employeeCode?: string;
   payDate?: string;
+  payPeriod?: string;
+  payslipMonth?: string;
   paidDays?: number;
   lopDays?: number;
   notes?: string;
   earnings?: SlipLine[];
   deductions?: SlipLine[];
 };
-
-const MONTH_NAMES = [
-  '',
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
 
 /**
  * A4 payslip PDF via PDFKit (no Chrome / Puppeteer).
@@ -113,7 +103,12 @@ export class PdfSlipService {
     const net = docJson?.earnings?.length
       ? gross - totalDed
       : toNumber(slip.netPay);
-    const period = `${MONTH_NAMES[slip.month]} ${slip.year}`;
+    const monthLabel =
+      docJson?.payslipMonth?.trim() ||
+      formatPayslipMonthLabel(slip.year, slip.month);
+    const periodRange =
+      docJson?.payPeriod?.trim() ||
+      formatPayslipPeriodRange(slip.year, slip.month);
     const u = slip.user;
     const employeeName =
       docJson?.employeeName?.trim() || `${u.firstName} ${u.lastName}`;
@@ -185,7 +180,7 @@ export class PdfSlipService {
         .font('Helvetica-Bold')
         .fontSize(11)
         .fillColor('#1a1d23')
-        .text(period, left, y + 12, {
+        .text(monthLabel, left, y + 12, {
           width: pageW,
           align: 'right',
           lineBreak: false,
@@ -221,7 +216,7 @@ export class PdfSlipService {
       };
       kv('Employee Name', employeeName);
       kv('Employee ID', employeeCode);
-      kv('Pay Period', period);
+      kv('Pay Period', periodRange);
       kv('Pay Date', payDate);
 
       const cardX = left + pageW - 170;

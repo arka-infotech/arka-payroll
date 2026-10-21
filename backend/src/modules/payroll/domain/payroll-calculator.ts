@@ -202,3 +202,48 @@ function sanitizeEmpCode(value: string | null | undefined): string {
 export function daysInMonth(year: number, month: number): number {
   return new Date(year, month, 0).getDate();
 }
+
+const MONTH_SHORT = [
+  '',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+const MONTH_NAMES = [
+  '',
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+/** e.g. year=2026, month=9 → "1 Sep 26 - 30 Sep 26" */
+export function formatPayslipPeriodRange(year: number, month: number): string {
+  const lastDay = new Date(year, month, 0).getDate();
+  const short = MONTH_SHORT[month] ?? String(month);
+  const yy = String(year).slice(-2);
+  return `1 ${short} ${yy} - ${lastDay} ${short} ${yy}`;
+}
+
+/** e.g. year=2026, month=9 → "September 2026" */
+export function formatPayslipMonthLabel(year: number, month: number): string {
+  return `${MONTH_NAMES[month] ?? month} ${year}`;
+}
