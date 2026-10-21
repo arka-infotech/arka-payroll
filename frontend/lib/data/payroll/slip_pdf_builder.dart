@@ -76,9 +76,14 @@ class SlipPdfBuilder {
 
     pw.MemoryImage? logo;
     try {
-      final bytes = await rootBundle.load(AppConfig.logoLight);
+      final bytes = await rootBundle.load(AppConfig.payslipLogo);
       logo = pw.MemoryImage(bytes.buffer.asUint8List());
-    } catch (_) {}
+    } catch (_) {
+      try {
+        final bytes = await rootBundle.load(AppConfig.logoLight);
+        logo = pw.MemoryImage(bytes.buffer.asUint8List());
+      } catch (_) {}
+    }
 
     // Noto Sans covers ₹ and other Unicode; default Helvetica does not.
     final baseFont = await PdfGoogleFonts.notoSansRegular();
@@ -90,11 +95,12 @@ class SlipPdfBuilder {
     final line = PdfColor.fromInt(0xFFE6E8EE);
     final greenBg = PdfColor.fromInt(0xFFF3FBF6);
     final green = PdfColor.fromInt(0xFF1F9D55);
+    final brand = PdfColor.fromInt(0xFF14808F);
 
     pdf.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.fromLTRB(36, 32, 36, 40),
+        margin: const pw.EdgeInsets.fromLTRB(32, 24, 32, 28),
         theme: pw.ThemeData.withFont(base: baseFont, bold: boldFont),
         build: (ctx) {
           final rows = [
@@ -110,15 +116,17 @@ class SlipPdfBuilder {
               ),
           ];
 
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+          return pw.Stack(
             children: [
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                children: [
               pw.Row(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
                   if (logo != null) ...[
-                    pw.Image(logo, width: 48, height: 48),
-                    pw.SizedBox(width: 10),
+                    pw.Image(logo, width: 40, height: 40),
+                    pw.SizedBox(width: 8),
                   ],
                   pw.Expanded(
                     child: pw.Column(
@@ -126,12 +134,13 @@ class SlipPdfBuilder {
                       children: [
                         pw.Text(company,
                             style: pw.TextStyle(
-                                fontSize: 15,
+                                fontSize: 13,
                                 fontWeight: pw.FontWeight.bold,
                                 color: ink)),
-                        pw.SizedBox(height: 3),
+                        pw.SizedBox(height: 2),
                         pw.Text(location,
-                            style: pw.TextStyle(fontSize: 9, color: muted)),
+                            maxLines: 2,
+                            style: pw.TextStyle(fontSize: 8, color: muted)),
                       ],
                     ),
                   ),
@@ -139,18 +148,18 @@ class SlipPdfBuilder {
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: [
                       pw.Text('Payslip For the Month',
-                          style: pw.TextStyle(fontSize: 10, color: muted)),
+                          style: pw.TextStyle(fontSize: 9, color: muted)),
                       pw.SizedBox(height: 2),
                       pw.Text(period,
                           style: pw.TextStyle(
-                              fontSize: 13,
+                              fontSize: 12,
                               fontWeight: pw.FontWeight.bold,
                               color: ink)),
                     ],
                   ),
                 ],
               ),
-              pw.SizedBox(height: 22),
+              pw.SizedBox(height: 14),
               pw.Row(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
@@ -223,7 +232,7 @@ class SlipPdfBuilder {
                   ),
                 ],
               ),
-              pw.SizedBox(height: 18),
+              pw.SizedBox(height: 12),
               pw.Table(
                 border: pw.TableBorder.all(color: line, width: 0.6),
                 columnWidths: {
@@ -256,7 +265,7 @@ class SlipPdfBuilder {
                   ),
                 ],
               ),
-              pw.SizedBox(height: 12),
+              pw.SizedBox(height: 10),
               pw.Container(
                 decoration: pw.BoxDecoration(
                   border: pw.Border.all(color: line),
@@ -266,17 +275,17 @@ class SlipPdfBuilder {
                   children: [
                     pw.Expanded(
                       child: pw.Padding(
-                        padding: const pw.EdgeInsets.all(12),
+                        padding: const pw.EdgeInsets.all(10),
                         child: pw.Column(
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
                           children: [
                             pw.Text('TOTAL NET PAYABLE',
                                 style: pw.TextStyle(
-                                    fontSize: 11,
+                                    fontSize: 10,
                                     fontWeight: pw.FontWeight.bold)),
                             pw.Text('Gross Earnings - Total Deductions',
                                 style:
-                                    pw.TextStyle(fontSize: 9, color: muted)),
+                                    pw.TextStyle(fontSize: 8, color: muted)),
                           ],
                         ),
                       ),
@@ -284,39 +293,54 @@ class SlipPdfBuilder {
                     pw.Container(
                       color: greenBg,
                       padding: const pw.EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 14),
+                          horizontal: 12, vertical: 12),
                       child: pw.Text(_inr.format(net),
                           style: pw.TextStyle(
-                              fontSize: 12, fontWeight: pw.FontWeight.bold)),
+                              fontSize: 11, fontWeight: pw.FontWeight.bold)),
                     ),
                   ],
                 ),
               ),
-              pw.SizedBox(height: 16),
+              pw.SizedBox(height: 10),
               pw.Center(
                 child: pw.Text('Amount In Words : ${_inrWords(net)}',
-                    style: pw.TextStyle(fontSize: 10, color: muted)),
-              ),
-              pw.SizedBox(height: 10),
-              pw.Divider(color: line),
-              if (notes.isNotEmpty) ...[
-                pw.SizedBox(height: 8),
-                pw.Center(
-                    child: pw.Text(notes,
-                        style: pw.TextStyle(fontSize: 9, color: muted))),
-              ],
-              pw.SizedBox(height: 14),
-              pw.Center(
-                child: pw.Text('-- This is a system-generated document. --',
                     style: pw.TextStyle(fontSize: 9, color: muted)),
               ),
-              pw.Spacer(),
+              pw.SizedBox(height: 6),
+              pw.Divider(color: line),
+              if (notes.isNotEmpty) ...[
+                pw.SizedBox(height: 6),
+                pw.Center(
+                    child: pw.Text(notes,
+                        maxLines: 2,
+                        style: pw.TextStyle(fontSize: 8, color: muted))),
+              ],
+              pw.SizedBox(height: 8),
               pw.Center(
-                child: pw.Text('Powered by Arka Payroll',
-                    style: pw.TextStyle(
-                        fontSize: 9,
-                        color: PdfColor.fromInt(0xFF14808F),
-                        fontWeight: pw.FontWeight.bold)),
+                child: pw.Text('-- This is a system-generated document. --',
+                    style: pw.TextStyle(fontSize: 8, color: muted)),
+              ),
+              pw.SizedBox(height: 36),
+                ],
+              ),
+              pw.Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.center,
+                  children: [
+                    if (logo != null) ...[
+                      pw.Image(logo, width: 16, height: 16),
+                      pw.SizedBox(width: 6),
+                    ],
+                    pw.Text('Powered by Arka Payroll',
+                        style: pw.TextStyle(
+                            fontSize: 8,
+                            color: brand,
+                            fontWeight: pw.FontWeight.bold)),
+                  ],
+                ),
               ),
             ],
           );

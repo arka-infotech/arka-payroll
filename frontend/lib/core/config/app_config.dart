@@ -11,6 +11,8 @@ class AppConfig {
   static const String logoLight = 'assets/branding/source_light.png';
   static const String logoDark = 'assets/branding/source_dark.png';
   static const String appIcon = 'assets/branding/aips_icon.png';
+  /// Payslip PDF header + footer mark (cyan C on black).
+  static const String payslipLogo = 'assets/branding/payslip-logo.png';
 
   /// Production API (nginx → PM2 on port 3055).
   static const String productionApiBaseUrl =

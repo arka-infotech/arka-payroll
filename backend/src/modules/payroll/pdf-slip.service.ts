@@ -124,251 +124,288 @@ export class PdfSlipService {
     const payDate = formatPayDate(docJson?.payDate ?? slip.payDate);
     const notes = docJson?.notes ?? slip.slipNotes ?? '';
 
-    const logoPath = [
-      join(process.cwd(), 'assets/payslip-logo.png'),
-      join(process.cwd(), 'backend/assets/payslip-logo.png'),
-    ].find((p) => existsSync(p));
+    const logoBuf = loadPayslipLogo();
 
     return new Promise<Buffer>((resolve, reject) => {
+      // bufferPages so we can always pin the footer to page 1 (A4 only).
       const doc = new PDFDocument({
         size: 'A4',
-        margins: { top: 40, bottom: 48, left: 42, right: 42 },
+        bufferPages: true,
+        autoFirstPage: true,
+        margins: { top: 28, bottom: 52, left: 36, right: 36 },
       });
       const chunks: Buffer[] = [];
       doc.on('data', (c: Buffer) => chunks.push(c));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      const pageW =
-        doc.page.width - doc.page.margins.left - doc.page.margins.right;
+      const left = doc.page.margins.left;
+      const pageW = doc.page.width - left - doc.page.margins.right;
+      const footerBand = 44;
+      const contentBottom = doc.page.height - footerBand - 8;
       let y = doc.page.margins.top;
 
-      if (logoPath) {
+      const drawLogo = (x: number, atY: number, size: number) => {
+        if (!logoBuf) return;
         try {
-          doc.image(readFileSync(logoPath), doc.page.margins.left, y, {
-            fit: [48, 48],
-          });
+          doc.image(logoBuf, x, atY, { fit: [size, size] });
         } catch {
           /* ignore logo errors */
         }
-      }
+      };
+
+      // ── Header (logo + company title) ─────────────────────────────────
+      drawLogo(left, y, 40);
+      const titleX = left + (logoBuf ? 48 : 0);
+      const titleW = pageW - (logoBuf ? 48 : 0) - 150;
       doc
         .font('Helvetica-Bold')
-        .fontSize(14)
+        .fontSize(13)
         .fillColor('#1a1d23')
-        .text(company, doc.page.margins.left + 56, y, { width: pageW - 200 });
+        .text(company, titleX, y, { width: titleW, lineBreak: false });
+      doc
+        .font('Helvetica')
+        .fontSize(7.5)
+        .fillColor('#8b919a')
+        .text(location, titleX, y + 16, {
+          width: titleW,
+          height: 28,
+          ellipsis: true,
+        });
       doc
         .font('Helvetica')
         .fontSize(8)
         .fillColor('#8b919a')
-        .text(location, doc.page.margins.left + 56, y + 18, {
-          width: pageW - 200,
-        });
-      doc
-        .font('Helvetica')
-        .fontSize(9)
-        .fillColor('#8b919a')
-        .text('Payslip For the Month', doc.page.margins.left, y, {
+        .text('Payslip For the Month', left, y, {
           width: pageW,
           align: 'right',
+          lineBreak: false,
         });
       doc
         .font('Helvetica-Bold')
-        .fontSize(12)
+        .fontSize(11)
         .fillColor('#1a1d23')
-        .text(period, doc.page.margins.left, y + 14, {
+        .text(period, left, y + 12, {
           width: pageW,
           align: 'right',
+          lineBreak: false,
         });
 
-      y += 64;
+      y += 48;
       doc
         .font('Helvetica-Bold')
-        .fontSize(9)
+        .fontSize(8)
         .fillColor('#8b919a')
-        .text('EMPLOYEE SUMMARY', doc.page.margins.left, y);
-      y += 16;
+        .text('EMPLOYEE SUMMARY', left, y, { lineBreak: false });
+      y += 12;
 
+      const summaryTop = y;
       const kv = (label: string, value: string) => {
         doc
           .font('Helvetica')
-          .fontSize(9)
+          .fontSize(8)
           .fillColor('#6b7280')
-          .text(label, doc.page.margins.left, y, { width: 90 });
+          .text(label, left, y, { width: 86, lineBreak: false });
         doc
           .fillColor('#9aa1ab')
-          .text(':', doc.page.margins.left + 90, y, { width: 12 });
+          .text(':', left + 86, y, { width: 10, lineBreak: false });
         doc
           .font('Helvetica-Bold')
           .fillColor('#1a1d23')
-          .text(value, doc.page.margins.left + 104, y, { width: 200 });
-        y += 14;
+          .text(value, left + 98, y, {
+            width: pageW - 300,
+            lineBreak: false,
+            ellipsis: true,
+          });
+        y += 12;
       };
       kv('Employee Name', employeeName);
       kv('Employee ID', employeeCode);
       kv('Pay Period', period);
       kv('Pay Date', payDate);
 
-      const cardX = doc.page.margins.left + pageW - 190;
-      const cardY = y - 70;
-      doc
-        .roundedRect(cardX, cardY, 190, 70, 6)
-        .strokeColor('#e6e8ee')
-        .stroke();
-      doc.rect(cardX, cardY, 190, 40).fill('#f3fbf6');
+      const cardX = left + pageW - 170;
+      const cardY = summaryTop;
+      doc.roundedRect(cardX, cardY, 170, 62, 5).strokeColor('#e6e8ee').stroke();
+      doc.rect(cardX, cardY, 170, 34).fill('#f3fbf6');
       doc
         .font('Helvetica-Bold')
-        .fontSize(13)
+        .fontSize(12)
         .fillColor('#1a1d23')
-        .text(inr(net), cardX + 12, cardY + 10, { width: 166 });
+        .text(inr(net), cardX + 10, cardY + 8, {
+          width: 150,
+          lineBreak: false,
+        });
+      doc
+        .font('Helvetica')
+        .fontSize(7)
+        .fillColor('#6b7280')
+        .text('Total Net Pay', cardX + 10, cardY + 22, {
+          width: 150,
+          lineBreak: false,
+        });
       doc
         .font('Helvetica')
         .fontSize(8)
-        .fillColor('#6b7280')
-        .text('Total Net Pay', cardX + 12, cardY + 26, { width: 166 });
-      doc
-        .font('Helvetica')
-        .fontSize(9)
         .fillColor('#4b5563')
-        .text(`Paid Days : ${paidDays}`, cardX + 12, cardY + 46, {
-          width: 166,
+        .text(`Paid Days : ${paidDays}`, cardX + 10, cardY + 40, {
+          width: 150,
+          lineBreak: false,
         });
-      doc.text(`LOP Days : ${lopDays}`, cardX + 12, cardY + 58, {
-        width: 166,
+      doc.text(`LOP Days : ${lopDays}`, cardX + 10, cardY + 50, {
+        width: 150,
+        lineBreak: false,
       });
 
-      y = Math.max(y, cardY + 82);
+      y = Math.max(y, cardY + 70);
 
       const colW = pageW / 4;
-      const drawHeader = () => {
-        doc.rect(doc.page.margins.left, y, pageW, 22).fill('#f6f7f9');
-        doc.font('Helvetica-Bold').fontSize(8).fillColor('#8b919a');
-        doc.text('EARNINGS', doc.page.margins.left + 6, y + 7, {
-          width: colW - 8,
-        });
-        doc.text('AMOUNT', doc.page.margins.left + colW + 6, y + 7, {
-          width: colW - 8,
-          align: 'right',
-        });
-        doc.text('DEDUCTIONS', doc.page.margins.left + colW * 2 + 6, y + 7, {
-          width: colW - 8,
-        });
-        doc.text('AMOUNT', doc.page.margins.left + colW * 3 + 6, y + 7, {
-          width: colW - 8,
-          align: 'right',
-        });
-        y += 22;
-      };
-      drawHeader();
-      doc.strokeColor('#e6e8ee');
+      const rowH = 15;
+      doc.rect(left, y, pageW, 18).fill('#f6f7f9');
+      doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#8b919a');
+      doc.text('EARNINGS', left + 5, y + 5, { width: colW - 8, lineBreak: false });
+      doc.text('AMOUNT', left + colW + 5, y + 5, {
+        width: colW - 8,
+        align: 'right',
+        lineBreak: false,
+      });
+      doc.text('DEDUCTIONS', left + colW * 2 + 5, y + 5, {
+        width: colW - 8,
+        lineBreak: false,
+      });
+      doc.text('AMOUNT', left + colW * 3 + 5, y + 5, {
+        width: colW - 8,
+        align: 'right',
+        lineBreak: false,
+      });
+      y += 18;
 
       const rows = Math.max(earnings.length, deductions.length, 1);
       for (let i = 0; i < rows; i++) {
+        if (y + rowH > contentBottom - 120) break;
         const e = earnings[i];
         const d = deductions[i];
-        doc.font('Helvetica').fontSize(9).fillColor('#1a1d23');
-        doc.text(e?.label ?? '', doc.page.margins.left + 6, y + 5, {
+        doc.font('Helvetica').fontSize(8).fillColor('#1a1d23');
+        doc.text(e?.label ?? '', left + 5, y + 3, {
           width: colW - 8,
+          lineBreak: false,
+          ellipsis: true,
         });
-        doc.text(e ? inr(e.amount) : '', doc.page.margins.left + colW + 6, y + 5, {
+        doc.text(e ? inr(e.amount) : '', left + colW + 5, y + 3, {
           width: colW - 8,
           align: 'right',
+          lineBreak: false,
         });
-        doc.text(d?.label ?? '', doc.page.margins.left + colW * 2 + 6, y + 5, {
+        doc.text(d?.label ?? '', left + colW * 2 + 5, y + 3, {
           width: colW - 8,
+          lineBreak: false,
+          ellipsis: true,
         });
-        doc.text(
-          d ? inr(d.amount) : '',
-          doc.page.margins.left + colW * 3 + 6,
-          y + 5,
-          { width: colW - 8, align: 'right' },
-        );
-        y += 18;
+        doc.text(d ? inr(d.amount) : '', left + colW * 3 + 5, y + 3, {
+          width: colW - 8,
+          align: 'right',
+          lineBreak: false,
+        });
+        y += rowH;
       }
 
-      doc.rect(doc.page.margins.left, y, pageW, 20).fill('#f6f7f9');
-      doc.font('Helvetica-Bold').fontSize(9).fillColor('#1a1d23');
-      doc.text('Gross Earnings', doc.page.margins.left + 6, y + 5, {
+      doc.rect(left, y, pageW, 17).fill('#f6f7f9');
+      doc.font('Helvetica-Bold').fontSize(8).fillColor('#1a1d23');
+      doc.text('Gross Earnings', left + 5, y + 4, {
         width: colW - 8,
+        lineBreak: false,
       });
-      doc.text(inr(gross), doc.page.margins.left + colW + 6, y + 5, {
-        width: colW - 8,
-        align: 'right',
-      });
-      doc.text('Total Deductions', doc.page.margins.left + colW * 2 + 6, y + 5, {
-        width: colW - 8,
-      });
-      doc.text(inr(totalDed), doc.page.margins.left + colW * 3 + 6, y + 5, {
+      doc.text(inr(gross), left + colW + 5, y + 4, {
         width: colW - 8,
         align: 'right',
+        lineBreak: false,
       });
-      y += 28;
+      doc.text('Total Deductions', left + colW * 2 + 5, y + 4, {
+        width: colW - 8,
+        lineBreak: false,
+      });
+      doc.text(inr(totalDed), left + colW * 3 + 5, y + 4, {
+        width: colW - 8,
+        align: 'right',
+        lineBreak: false,
+      });
+      y += 22;
 
+      doc.roundedRect(left, y, pageW, 34, 5).strokeColor('#e6e8ee').stroke();
       doc
-        .roundedRect(doc.page.margins.left, y, pageW, 40, 6)
-        .strokeColor('#e6e8ee')
-        .stroke();
+        .font('Helvetica-Bold')
+        .fontSize(9)
+        .fillColor('#1a1d23')
+        .text('TOTAL NET PAYABLE', left + 10, y + 6, { lineBreak: false });
+      doc
+        .font('Helvetica')
+        .fontSize(7)
+        .fillColor('#8b919a')
+        .text('Gross Earnings - Total Deductions', left + 10, y + 18, {
+          lineBreak: false,
+        });
+      doc.rect(left + pageW - 110, y, 110, 34).fill('#f3fbf6');
       doc
         .font('Helvetica-Bold')
         .fontSize(10)
         .fillColor('#1a1d23')
-        .text('TOTAL NET PAYABLE', doc.page.margins.left + 12, y + 8);
-      doc
-        .font('Helvetica')
-        .fontSize(8)
-        .fillColor('#8b919a')
-        .text('Gross Earnings - Total Deductions', doc.page.margins.left + 12, y + 22);
-      doc
-        .rect(doc.page.margins.left + pageW - 120, y, 120, 40)
-        .fill('#f3fbf6');
-      doc
-        .font('Helvetica-Bold')
-        .fontSize(11)
-        .fillColor('#1a1d23')
-        .text(inr(net), doc.page.margins.left + pageW - 112, y + 14, {
-          width: 104,
+        .text(inr(net), left + pageW - 102, y + 12, {
+          width: 94,
           align: 'right',
+          lineBreak: false,
         });
-      y += 52;
+      y += 42;
 
       doc
         .font('Helvetica')
-        .fontSize(9)
+        .fontSize(8)
         .fillColor('#4b5563')
-        .text(`Amount In Words : ${inrWords(net)}`, doc.page.margins.left, y, {
+        .text(`Amount In Words : ${inrWords(net)}`, left, y, {
           width: pageW,
           align: 'center',
+          lineBreak: false,
+          ellipsis: true,
         });
-      y += 18;
-      if (notes.trim()) {
+      y += 14;
+      if (notes.trim() && y < contentBottom - 24) {
         doc
           .font('Helvetica')
-          .fontSize(8)
+          .fontSize(7.5)
           .fillColor('#6b7280')
-          .text(notes.trim(), doc.page.margins.left, y, {
+          .text(notes.trim(), left, y, {
             width: pageW,
             align: 'center',
+            height: 20,
+            ellipsis: true,
           });
-        y += 16;
+        y += 14;
       }
       doc
         .font('Helvetica')
-        .fontSize(8)
+        .fontSize(7.5)
         .fillColor('#b0b6c0')
-        .text('-- This is a system-generated document. --', doc.page.margins.left, y, {
+        .text('-- This is a system-generated document. --', left, y, {
           width: pageW,
           align: 'center',
+          lineBreak: false,
         });
+
+      // ── Footer on page 1 only (logo + powered-by) ─────────────────────
+      const range = doc.bufferedPageRange();
+      doc.switchToPage(range.start);
+      const footerY = doc.page.height - footerBand + 6;
+      const markSize = 18;
+      const powered = 'Powered by Arka Payroll';
+      doc.font('Helvetica-Bold').fontSize(8);
+      const textW = doc.widthOfString(powered);
+      const blockW = (logoBuf ? markSize + 6 : 0) + textW;
+      const blockX = left + (pageW - blockW) / 2;
+      drawLogo(blockX, footerY, markSize);
       doc
-        .font('Helvetica-Bold')
-        .fontSize(8)
         .fillColor('#14808f')
-        .text(
-          'Powered by Arka Payroll',
-          doc.page.margins.left,
-          doc.page.height - 36,
-          { width: pageW, align: 'center' },
-        );
+        .text(powered, blockX + (logoBuf ? markSize + 6 : 0), footerY + 4, {
+          lineBreak: false,
+        });
 
       doc.end();
     });
@@ -405,6 +442,24 @@ export class PdfSlipService {
     if (otherDed) ded.push({ label: 'Other Deductions', amount: otherDed });
     return { earnings: earn, deductions: ded };
   }
+}
+
+function loadPayslipLogo(): Buffer | null {
+  const candidates = [
+    join(process.cwd(), 'assets/payslip-logo.png'),
+    join(process.cwd(), 'backend/assets/payslip-logo.png'),
+    join(__dirname, '../../../assets/payslip-logo.png'),
+    join(__dirname, '../../assets/payslip-logo.png'),
+  ];
+  for (const p of candidates) {
+    if (!existsSync(p)) continue;
+    try {
+      return readFileSync(p);
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
 }
 
 function inr(n: number): string {
