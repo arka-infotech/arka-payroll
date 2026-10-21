@@ -2,7 +2,9 @@ import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import PDFDocument from 'pdfkit';
+// pdfkit is CommonJS; `import PDFDocument from 'pdfkit'` compiles to
+// `pdfkit_1.default`, which is undefined at runtime under Nest (no esModuleInterop).
+import PDFDocument = require('pdfkit');
 import { toNumber } from './domain/money.util';
 
 type SlipRow = {

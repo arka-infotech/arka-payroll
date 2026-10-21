@@ -468,26 +468,19 @@ class _SlipCard extends StatelessWidget {
     final expectEmail = row.status == 'LOCKED' ||
         row.status == 'PROCESSED' ||
         row.status == 'PAID';
-    final email = slipEmailTone(row.emailStatus, expectEmail: expectEmail);
-    final emailTooltip = row.emailError?.trim().isNotEmpty == true
-        ? row.emailError!
-        : (row.emailSentAt != null
-            ? 'Sent ${row.emailSentAt!.toLocal()}'
-            : null);
-    final statusRow = Wrap(
-      spacing: 6,
-      runSpacing: 4,
+    final statusRow = Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         chip,
-        if (email != null)
-          Tooltip(
-            message: emailTooltip ?? email.$2,
-            child: ArkaStatusChip(
-              email.$2,
-              tone: email.$1,
-              dot: true,
-            ),
+        if (expectEmail || row.emailStatus != null) ...[
+          const SizedBox(width: 6),
+          SlipEmailStatusIcon(
+            status: row.emailStatus,
+            expectEmail: expectEmail,
+            error: row.emailError,
+            sentAt: row.emailSentAt,
           ),
+        ],
       ],
     );
 
@@ -501,7 +494,7 @@ class _SlipCard extends StatelessWidget {
                 const SizedBox(width: 14),
                 identity,
                 SizedBox(
-                    width: 200,
+                    width: 140,
                     child:
                         Align(alignment: Alignment.centerLeft, child: statusRow)),
                 SizedBox(

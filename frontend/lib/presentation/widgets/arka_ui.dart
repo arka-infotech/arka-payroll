@@ -92,16 +92,89 @@ class ToneColors {
       _ => (ArkaTone.neutral, Fmt.titleCase(status)),
     };
 
-/// Maps payslip email outcome after lock.
-/// When [expectEmail] is true (locked slip) and status is null, shows "Email not sent".
+/// Maps payslip email outcome after lock (label + tone for tooltips / legacy).
 (ArkaTone, String)? slipEmailTone(String? status, {bool expectEmail = false}) =>
     switch (status) {
-      'SENT' => (ArkaTone.success, 'Email sent'),
-      'PENDING' => (ArkaTone.info, 'Email sending…'),
-      'FAILED' => (ArkaTone.danger, 'Email failed'),
-      'SKIPPED' => (ArkaTone.neutral, 'Email skipped'),
-      _ => expectEmail ? (ArkaTone.warning, 'Email not sent') : null,
+      'SENT' => (ArkaTone.success, 'Sent'),
+      'PENDING' => (ArkaTone.info, 'Pending'),
+      'FAILED' => (ArkaTone.danger, 'Failed'),
+      'SKIPPED' => (ArkaTone.neutral, 'Skipped'),
+      _ => expectEmail ? (ArkaTone.warning, 'Pending') : null,
     };
+
+/// Compact email icon for list rows — sent vs pending (no text overflow).
+class SlipEmailStatusIcon extends StatelessWidget {
+  const SlipEmailStatusIcon({
+    super.key,
+    required this.status,
+    this.expectEmail = false,
+    this.error,
+    this.sentAt,
+    this.size = 18,
+  });
+
+  final String? status;
+  final bool expectEmail;
+  final String? error;
+  final DateTime? sentAt;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    if (status == null && !expectEmail) return const SizedBox.shrink();
+
+    final (IconData icon, ArkaTone tone, String tip) = switch (status) {
+      'SENT' => (
+          Icons.mark_email_read_rounded,
+          ArkaTone.success,
+          sentAt != null ? 'Sent ${sentAt!.toLocal()}' : 'Email sent',
+        ),
+      'PENDING' => (
+          Icons.schedule_send_rounded,
+          ArkaTone.info,
+          'Email pending…',
+        ),
+      'FAILED' => (
+          Icons.unpublished_outlined,
+          ArkaTone.danger,
+          (error != null && error!.trim().isNotEmpty)
+              ? error!.trim()
+              : 'Email failed',
+        ),
+      'SKIPPED' => (
+          Icons.mark_email_unread_outlined,
+          ArkaTone.neutral,
+          (error != null && error!.trim().isNotEmpty)
+              ? error!.trim()
+              : 'Email skipped',
+        ),
+      _ => (
+          Icons.mark_email_unread_outlined,
+          ArkaTone.warning,
+          'Email pending',
+        ),
+    };
+
+    final colors = ToneColors.of(context, tone);
+    return Tooltip(
+      message: tip,
+      child: Container(
+        width: size + 10,
+        height: size + 10,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: colors.bg,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          icon,
+          size: size,
+          color: ToneColors.accent(context, tone),
+        ),
+      ),
+    );
+  }
+}
 
 // ── Small building blocks ───────────────────────────────────────────────────
 
