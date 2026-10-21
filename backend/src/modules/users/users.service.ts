@@ -65,8 +65,8 @@ export class UsersService {
   ) {}
 
   /**
-   * HR list: no Super Admin, no online/offline.
-   * Super Admin list: includes presence (`isOnline` derived from lastSeenAt).
+   * HR + Super Admin lists exclude Super Admin; HR admins see each other.
+   * Presence (`isOnline`) is only attached for Super Admin viewers.
    */
   async listVisibleUsers(requester: JwtPayload) {
     const isSuper = requester.role === AppRole.SUPER_ADMIN;
