@@ -60,7 +60,7 @@ export class UpsertSalaryStructureDto {
   @IsBoolean()
   tdsApplicable?: boolean;
 
-  /** Salary credit day of month (1–28) for auto slip draft. */
+  /** Day of next month salary is credited (1–28). E.g. 3 → Sept period, pay date 3 Oct. */
   @IsOptional()
   @IsNumber()
   @Min(1)

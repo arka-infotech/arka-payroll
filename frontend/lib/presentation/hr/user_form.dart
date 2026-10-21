@@ -23,7 +23,7 @@ class UserFormData {
   final travel = TextEditingController();
   final otherFixed = TextEditingController();
   final hra = TextEditingController(text: '0');
-  final payDay = TextEditingController(text: '1');
+  final payDay = TextEditingController(text: '3');
 
   String role = 'EMPLOYEE';
   DateTime? doj;
@@ -97,7 +97,7 @@ class UserFormData {
       showAdvanced = h > 0;
       enablePt = s['professionalTaxApplicable'] == true;
       enableTds = s['tdsApplicable'] == true;
-      payDay.text = '${parseApiNum(s['salaryCreditDay'], fallback: 1).toInt()}';
+      payDay.text = '${parseApiNum(s['salaryCreditDay'], fallback: 3).toInt()}';
     }
   }
 
@@ -139,7 +139,7 @@ class UserFormData {
       'professionalTaxApplicable': enablePt,
       'tdsApplicable': enableTds,
       'taxRegime': 'NEW',
-      'salaryCreditDay': int.tryParse(payDay.text.trim())?.clamp(1, 28) ?? 1,
+      'salaryCreditDay': int.tryParse(payDay.text.trim())?.clamp(1, 28) ?? 3,
       'effectiveFrom': DateFormat('yyyy-MM-dd').format(DateTime.now()),
     };
   }
@@ -554,7 +554,8 @@ class PayPackageSection extends StatelessWidget {
               ],
               decoration: const InputDecoration(
                 labelText: 'Salary credit day *',
-                helperText: 'Draft slip auto-creates on this day (1–28)',
+                helperText:
+                    'Day of next month salary is paid (e.g. 3 → Sept slip, pay date 3 Oct)',
               ),
               validator: UserValidators.payDay,
             ),

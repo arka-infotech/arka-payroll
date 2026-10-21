@@ -133,8 +133,8 @@ model SalaryStructure {
   professionalTaxApplicable Boolean @default(false) @map("professional_tax_applicable")
   tdsApplicable             Boolean @default(false) @map("tds_applicable")
 
-  /// Day of month salary is credited (1–28) — auto-draft slip from this day if not punched.
-  salaryCreditDay Int @default(1) @map("salary_credit_day")
+  /// Day of next month salary is credited (1–28). E.g. 3 → Sept pay period, pay date 3 Oct.
+  salaryCreditDay Int @default(3) @map("salary_credit_day")
 
   effectiveFrom DateTime @map("effective_from") @db.Date
   createdAt     DateTime @default(now()) @map("created_at")

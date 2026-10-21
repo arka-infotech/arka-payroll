@@ -469,9 +469,13 @@ class SlipPdfBuilder {
 
   static String _formatPayDate(dynamic value) {
     if (value == null) return '-';
-    final date = DateTime.tryParse(value.toString());
-    if (date == null) return value.toString();
-    return DateFormat('dd/MM/yyyy').format(date.toLocal());
+    final raw = value.toString();
+    // Use the calendar date from the ISO prefix so TZ offsets do not shift the day.
+    final m = RegExp(r'^(\d{4})-(\d{2})-(\d{2})').firstMatch(raw);
+    if (m != null) return '${m[3]}/${m[2]}/${m[1]}';
+    final date = DateTime.tryParse(raw);
+    if (date == null) return raw;
+    return DateFormat('dd/MM/yyyy').format(date.toUtc());
   }
 
   static String _inrWords(double amount) {

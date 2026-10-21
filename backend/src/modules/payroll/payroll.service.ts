@@ -13,6 +13,7 @@ import { AppRole } from '../../common/enums/role.enum';
 import { ProcessPayrollDto } from './dto/process-payroll.dto';
 import {
   buildTrackingReference,
+  payslipFilename,
   computeMonthlyPayroll,
   daysInMonth,
   SalaryStructureInput,
@@ -677,7 +678,7 @@ export class PayrollService {
     });
 
     for (const u of users) {
-      const creditDay = u.salaryStructure?.salaryCreditDay ?? 1;
+      const creditDay = u.salaryStructure?.salaryCreditDay ?? 3;
       if (now.getDate() < creditDay) continue;
       await this.materializeDraftForUser(u.id, year, month);
     }
@@ -855,10 +856,7 @@ export class PayrollService {
         totalDeductions,
         netPay: net,
         slipNotes: dto.notes?.trim() || null,
-        payDate:
-          dto.payDate && !Number.isNaN(Date.parse(dto.payDate))
-            ? new Date(dto.payDate)
-            : slip.payDate,
+        payDate: parseDateOnly(dto.payDate) ?? slip.payDate,
         slipDocument: document as Prisma.InputJsonValue,
       },
     });
@@ -887,7 +885,16 @@ export class PayrollService {
   ): Promise<{ buffer: Buffer; filename: string }> {
     const slip = await this.getSlipMeta(payrollId, requester);
     const buffer = await this.pdfSlip.renderA4(slip);
-    return { buffer, filename: `${slip.trackingReference}.pdf` };
+    return {
+      buffer,
+      filename: payslipFilename({
+        year: slip.year,
+        month: slip.month,
+        trackingReference: slip.trackingReference,
+        employeeCode: slip.user.employeeCode,
+        slipDocument: slip.slipDocument,
+      }),
+    };
   }
 
   async listPayrollGridSeed(
@@ -1005,10 +1012,24 @@ function roundMonthlyCtc(s: {
   );
 }
 
-/** Credit day falls in the month after the payroll month (e.g. September slip → 3 October). */
+/**
+ * Credit day falls in the month after the payroll month
+ * (e.g. September slip + credit day 3 → 3 October).
+ * Payroll `month` is 1–12; JS Date months are 0-indexed, so passing `month`
+ * lands on the following calendar month. Use UTC so `@db.Date` stays stable
+ * across server timezones (IST midnight would otherwise shift the day back).
+ */
 function creditDate(year: number, month: number, creditDay?: number | null): Date {
-  const day = Math.min(Math.max(creditDay ?? 1, 1), 28);
-  return new Date(year, month, day);
+  const day = Math.min(Math.max(creditDay ?? 3, 1), 28);
+  return new Date(Date.UTC(year, month, day));
+}
+
+/** Parse YYYY-MM-DD (or ISO prefix) as a UTC calendar date for `@db.Date`. */
+function parseDateOnly(value?: string | null): Date | null {
+  if (!value?.trim()) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim());
+  if (!m) return null;
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
 }
 
 function roundMoney(n: number): number {

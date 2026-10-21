@@ -291,14 +291,32 @@ class PayrollRepository {
     return SlipPdfBuilder.build(slip);
   }
 
-  /// PDF bytes + official slip filename (`AIPS-YYYY-MM-CODE.pdf`).
+  /// PDF bytes + official slip filename (`AIPS-YYYY-MM-{EmpID}.pdf`).
   Future<({List<int> bytes, String filename})> fetchPdfBundle(
     String payrollId,
   ) async {
     final meta = await fetchSlip(payrollId);
-    final ref = meta['trackingReference'] as String? ?? payrollId;
     final bytes = await SlipPdfBuilder.build(meta);
-    return (bytes: bytes, filename: '$ref.pdf');
+    return (bytes: bytes, filename: _payslipFilename(meta, payrollId));
+  }
+
+  /// Prefer current Emp ID over a stale tracking ref (e.g. UUID stub).
+  static String _payslipFilename(Map<String, dynamic> slip, String fallback) {
+    final doc = slip['slipDocument'] as Map<String, dynamic>?;
+    final user = slip['user'] as Map<String, dynamic>? ?? {};
+    final year = parseApiNum(slip['year']).toInt();
+    final month = parseApiNum(slip['month']).toInt();
+    final fromDoc = '${doc?['employeeCode'] ?? ''}'.trim();
+    final fromUser = '${user['employeeCode'] ?? ''}'.trim();
+    final code = (fromDoc.isNotEmpty ? fromDoc : fromUser)
+        .replaceAll(RegExp(r'[^\w.\-]'), '_')
+        .toUpperCase();
+    if (code.isNotEmpty) {
+      final mm = month.toString().padLeft(2, '0');
+      return 'AIPS-$year-$mm-$code.pdf';
+    }
+    final ref = '${slip['trackingReference'] ?? fallback}'.trim();
+    return ref.toLowerCase().endsWith('.pdf') ? ref : '$ref.pdf';
   }
 
   Future<Map<String, dynamic>> saveSlipDocument(

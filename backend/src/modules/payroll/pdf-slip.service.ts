@@ -471,9 +471,15 @@ function inr(n: number): string {
 
 function formatPayDate(value: string | Date | null | undefined): string {
   if (!value) return '-';
+  if (typeof value === 'string') {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim());
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  }
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleDateString('en-GB');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  const mo = String(date.getUTCMonth() + 1).padStart(2, '0');
+  return `${d}/${mo}/${date.getUTCFullYear()}`;
 }
 
 function asSlipDocument(value: unknown): SlipDocument | undefined {

@@ -163,8 +163,39 @@ export function buildTrackingReference(
   userId: string,
 ): string {
   const mm = String(month).padStart(2, '0');
-  const code = (employeeCode ?? userId.slice(0, 8)).toUpperCase();
+  const code = sanitizeEmpCode(employeeCode) || userId.slice(0, 8).toUpperCase();
   return `AIPS-${year}-${mm}-${code}`;
+}
+
+/** Download / email filename — always prefers the employee's current Emp ID. */
+export function payslipFilename(input: {
+  year: number;
+  month: number;
+  trackingReference: string;
+  employeeCode?: string | null;
+  slipDocument?: unknown;
+}): string {
+  const doc =
+    input.slipDocument &&
+    typeof input.slipDocument === 'object' &&
+    !Array.isArray(input.slipDocument)
+      ? (input.slipDocument as Record<string, unknown>)
+      : undefined;
+  const fromDoc =
+    typeof doc?.employeeCode === 'string' ? doc.employeeCode.trim() : '';
+  const code = sanitizeEmpCode(fromDoc || input.employeeCode);
+  if (code) {
+    const mm = String(input.month).padStart(2, '0');
+    return `AIPS-${input.year}-${mm}-${code}.pdf`;
+  }
+  const ref = input.trackingReference.trim() || 'salary-slip';
+  return ref.toLowerCase().endsWith('.pdf') ? ref : `${ref}.pdf`;
+}
+
+function sanitizeEmpCode(value: string | null | undefined): string {
+  const raw = (value ?? '').trim();
+  if (!raw) return '';
+  return raw.replace(/[^\w.-]+/g, '_').toUpperCase();
 }
 
 /** Calendar days in a month (for Days Worked validation). */
