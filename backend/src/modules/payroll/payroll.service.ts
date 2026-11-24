@@ -918,7 +918,8 @@ export class PayrollService {
       throw new BadRequestException('Earnings/deductions amounts are invalid');
     }
 
-    const document = {
+    // Prisma JSON rejects `undefined` fields — omit empties instead.
+    const document: Record<string, unknown> = {
       companyName:
         dto.companyName?.trim() ||
         this.config.get<string>('COMPANY_NAME', 'Arka Infotech Software Solutions'),
@@ -928,17 +929,23 @@ export class PayrollService {
           'COMPANY_ADDRESS',
           'Office .no 512, Suchita Business Park, Patel chowk, opposite Hanuman temple, Shival Nagar, Saibaba Nagar, Pant Nagar, Ghatkopar East, Mumbai, Maharashtra 400077',
         ),
-      employeeName: dto.employeeName?.trim() || undefined,
-      employeeCode: dto.employeeCode?.trim() || undefined,
-      payDate: dto.payDate?.trim() || undefined,
-      payPeriod: dto.payPeriod?.trim() || undefined,
-      payslipMonth: dto.payslipMonth?.trim() || undefined,
       paidDays,
       lopDays,
-      notes: dto.notes?.trim() || undefined,
       earnings,
       deductions,
     };
+    const employeeName = dto.employeeName?.trim();
+    const employeeCode = dto.employeeCode?.trim();
+    const payDateRaw = dto.payDate?.trim();
+    const payPeriod = dto.payPeriod?.trim();
+    const payslipMonth = dto.payslipMonth?.trim();
+    const notes = dto.notes?.trim();
+    if (employeeName) document.employeeName = employeeName;
+    if (employeeCode) document.employeeCode = employeeCode;
+    if (payDateRaw) document.payDate = payDateRaw;
+    if (payPeriod) document.payPeriod = payPeriod;
+    if (payslipMonth) document.payslipMonth = payslipMonth;
+    if (notes) document.notes = notes;
 
     try {
       await this.prisma.monthlyPayroll.update({
@@ -949,8 +956,8 @@ export class PayrollService {
           grossEarnings: gross,
           totalDeductions,
           netPay: net,
-          slipNotes: dto.notes?.trim() || null,
-          payDate: parseDateOnly(dto.payDate) ?? slip.payDate,
+          slipNotes: notes || null,
+          payDate: parseDateOnly(payDateRaw) ?? slip.payDate,
           slipDocument: document as Prisma.InputJsonValue,
         },
       });
@@ -958,7 +965,9 @@ export class PayrollService {
       const detail = err instanceof Error ? err.message : String(err);
       this.logger.error(`updateSlipDocument failed for ${payrollId}: ${detail}`);
       throw new BadRequestException(
-        'Could not save slip changes. Check paid days, amounts, and try again.',
+        detail.includes('Invalid') || detail.includes('Argument')
+          ? `Could not save slip: ${detail.slice(0, 240)}`
+          : 'Could not save slip changes. Check paid days, amounts, and try again.',
       );
     }
 

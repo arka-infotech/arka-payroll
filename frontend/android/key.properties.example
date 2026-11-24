@@ -1,0 +1,6 @@
+# Copy to key.properties (gitignored) on each machine, or rely on GitHub Actions secrets.
+# Passwords live in GitHub Secrets — do not commit real values.
+storePassword=USE_GITHUB_SECRET_ANDROID_STORE_PASSWORD
+keyPassword=USE_GITHUB_SECRET_ANDROID_KEY_PASSWORD
+keyAlias=aips
+storeFile=keystore/aips-release.jks

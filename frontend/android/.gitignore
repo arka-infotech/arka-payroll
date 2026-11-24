@@ -9,6 +9,11 @@ GeneratedPluginRegistrant.java
 
 # Remember to never publicly share your keystore.
 # See https://flutter.dev/to/reference-keystore
-key.properties
+# Shared release signing is committed: keystore/aips-release.jks + key.properties
+# (private internal app — same signature on every machine).
+key.properties.local
 **/*.keystore
-**/*.jks
+keystore/.passwords.env
+keystore/*.env
+keystore/key.properties.local
+keystore/key.properties.example-filled

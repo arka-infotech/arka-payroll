@@ -43,7 +43,7 @@ export class UpdateSlipDocumentDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(400)
+  @MaxLength(600)
   location?: string;
 
   @IsOptional()
