@@ -947,15 +947,25 @@ export class PayrollService {
     if (payslipMonth) document.payslipMonth = payslipMonth;
     if (notes) document.notes = notes;
 
+    // DB check: days_payable <= working_days_in_month (and net = gross - deductions).
+    // Print edits often raise paid days (e.g. Oct 31) while the row still has 30.
+    const workingDays = Math.max(
+      slip.workingDaysInMonth ?? 0,
+      paidDays,
+      calDays,
+    );
+
     try {
       await this.prisma.monthlyPayroll.update({
         where: { id: payrollId },
         data: {
+          workingDaysInMonth: workingDays,
           daysPayable: paidDays,
           unpaidLeaveDays: lopDays,
           grossEarnings: gross,
           totalDeductions,
-          netPay: net,
+          // Keep exact identity for monthly_payroll_net_chk
+          netPay: roundMoney(gross - totalDeductions),
           slipNotes: notes || null,
           payDate: parseDateOnly(payDateRaw) ?? slip.payDate,
           slipDocument: document as Prisma.InputJsonValue,
@@ -964,11 +974,12 @@ export class PayrollService {
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       this.logger.error(`updateSlipDocument failed for ${payrollId}: ${detail}`);
-      throw new BadRequestException(
-        detail.includes('Invalid') || detail.includes('Argument')
+      const friendly = detail.includes('23514') || detail.includes('days_chk')
+        ? `Paid days (${paidDays}) cannot exceed working days on this slip. Try again, or re-punch the month.`
+        : detail.includes('Invalid') || detail.includes('Argument') || detail.includes('Postgres')
           ? `Could not save slip: ${detail.slice(0, 240)}`
-          : 'Could not save slip changes. Check paid days, amounts, and try again.',
-      );
+          : 'Could not save slip changes. Check paid days, amounts, and try again.';
+      throw new BadRequestException(friendly);
     }
 
     // Editing a locked slip should re-send the PDF — never fail the save if mail fails.
