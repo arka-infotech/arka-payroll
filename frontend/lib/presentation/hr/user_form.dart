@@ -105,6 +105,11 @@ class UserFormData {
 
   Map<String, dynamic> profilePayload({required bool includePassword}) {
     final u = uan.text.trim();
+    final panVal = pan.text.trim().toUpperCase();
+    final aadhaarVal = aadhaar.text.trim();
+    final bankNameVal = bankName.text.trim();
+    final bankAcct = bankAccount.text.trim();
+    final bankIfscVal = bankIfsc.text.trim().toUpperCase();
     return {
       'email': email.text.trim(),
       if (includePassword && password.text.isNotEmpty)
@@ -115,12 +120,12 @@ class UserFormData {
       'employeeCode': employeeCode.text.trim().toUpperCase(),
       'designation': designation.text.trim(),
       'dateOfJoining': DateFormat('yyyy-MM-dd').format(doj!),
-      'pan': pan.text.trim().toUpperCase(),
-      'uan': u.isEmpty || u == 'N/A' ? 'N/A' : u,
-      'aadhaar': aadhaar.text.trim().length == 12 ? aadhaar.text.trim() : 'N/A',
-      'bankName': bankName.text.trim(),
-      'bankAccountNumber': bankAccount.text.trim(),
-      'bankIfsc': bankIfsc.text.trim().toUpperCase(),
+      if (panVal.isNotEmpty) 'pan': panVal,
+      if (u.isNotEmpty && u != 'N/A') 'uan': u,
+      if (aadhaarVal.length == 12) 'aadhaar': aadhaarVal,
+      if (bankNameVal.isNotEmpty) 'bankName': bankNameVal,
+      if (bankAcct.isNotEmpty) 'bankAccountNumber': bankAcct,
+      if (bankIfscVal.isNotEmpty) 'bankIfsc': bankIfscVal,
     };
   }
 

@@ -69,7 +69,7 @@ class _AddUserScreenState extends ConsumerState<AddUserScreen> {
 
   Future<void> _savePackage() async {
     if (_createdUserId == null) {
-      context.go('/employees');
+      context.go('/home');
       return;
     }
     setState(() => _error = null);
@@ -82,7 +82,7 @@ class _AddUserScreenState extends ConsumerState<AddUserScreen> {
       if (!mounted) return;
       invalidatePayrollData(ref);
       ArkaSnack.success(context, 'Pay package saved for $_createdName');
-      context.go('/employees');
+      context.go('/home');
     } catch (e) {
       _showError(e);
     } finally {
@@ -97,7 +97,7 @@ class _AddUserScreenState extends ConsumerState<AddUserScreen> {
     return AppScaffold(
       title: first ? 'Add user' : 'Pay package',
       subtitle: first
-          ? 'Create a sign-in and payroll profile'
+          ? 'Login and profile — employee completes bank & statutory in the app'
           : 'Fixed monthly salary for $_createdName',
       showNav: false,
       bottomBar: ArkaBottomBar(
@@ -107,7 +107,7 @@ class _AddUserScreenState extends ConsumerState<AddUserScreen> {
                 ? null
                 : first
                     ? () => context.pop()
-                    : () => context.go('/employees'),
+                    : () => context.go('/home'),
             child: Text(first ? 'Cancel' : 'Set up later'),
           ),
           FilledButton(
@@ -139,10 +139,6 @@ class _AddUserScreenState extends ConsumerState<AddUserScreen> {
                     form: _form, isNew: true, onChanged: () => setState(() {})),
                 const SizedBox(height: 14),
                 ProfileSection(form: _form, onChanged: () => setState(() {})),
-                const SizedBox(height: 14),
-                BankSection(form: _form),
-                const SizedBox(height: 14),
-                StatutorySection(form: _form),
               ] else
                 PayPackageSection(
                     form: _form, onChanged: () => setState(() {})),
@@ -164,7 +160,7 @@ class _Steps extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-            child: _Step(index: 0, label: 'Profile & bank', current: step)),
+            child: _Step(index: 0, label: 'Login & profile', current: step)),
         const SizedBox(width: 10),
         Expanded(child: _Step(index: 1, label: 'Pay package', current: step)),
       ],

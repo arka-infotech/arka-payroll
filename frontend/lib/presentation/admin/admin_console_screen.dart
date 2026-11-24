@@ -5,13 +5,16 @@ import 'package:intl/intl.dart';
 import 'package:arka_payroll/core/role_labels.dart';
 import 'package:arka_payroll/core/theme/arka_theme.dart';
 import 'package:arka_payroll/presentation/shell/app_scaffold.dart';
+import 'package:arka_payroll/presentation/shell/main_tab_shell.dart';
 import 'package:arka_payroll/presentation/widgets/arka_error_view.dart';
 import 'package:arka_payroll/presentation/widgets/arka_fab.dart';
 import 'package:arka_payroll/presentation/widgets/arka_ui.dart';
 import 'package:arka_payroll/providers/app_providers.dart';
 
 class AdminConsoleScreen extends ConsumerStatefulWidget {
-  const AdminConsoleScreen({super.key});
+  const AdminConsoleScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   ConsumerState<AdminConsoleScreen> createState() => _AdminConsoleScreenState();
@@ -72,44 +75,58 @@ class _AdminConsoleScreenState extends ConsumerState<AdminConsoleScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final fab = ArkaAddFab(
+      label: 'Add user',
+      onPressed: () => context.push('/employees/add'),
+    );
+    final tabs = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: context.cs.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: context.cs.outlineVariant),
+          ),
+          child: const TabBar(
+            tabs: [
+              Tab(height: 42, icon: null, text: 'Users & presence'),
+              Tab(height: 42, text: 'Audit log'),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Expanded(
+          child: TabBarView(
+            children: [
+              _UsersTab(onBan: _ban, onUnban: _unban, onRemove: _remove),
+              const _AuditTab(),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    if (widget.embedded) {
+      return DefaultTabController(
+        length: 2,
+        child: EmbeddedScaffold(
+          title: 'Root console',
+          subtitle: 'Live presence, access control and audit trail',
+          floatingActionButton: fab,
+          child: tabs,
+        ),
+      );
+    }
     return DefaultTabController(
       length: 2,
       child: AppScaffold(
         title: 'Root console',
         subtitle: 'Live presence, access control and audit trail',
-        floatingActionButton: ArkaAddFab(
-          label: 'Add user',
-          onPressed: () => context.push('/employees/add'),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: context.cs.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: context.cs.outlineVariant),
-              ),
-              child: const TabBar(
-                tabs: [
-                  Tab(height: 42, icon: null, text: 'Users & presence'),
-                  Tab(height: 42, text: 'Audit log'),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  _UsersTab(onBan: _ban, onUnban: _unban, onRemove: _remove),
-                  const _AuditTab(),
-                ],
-              ),
-            ),
-          ],
-        ),
+        floatingActionButton: fab,
+        child: tabs,
       ),
     );
   }

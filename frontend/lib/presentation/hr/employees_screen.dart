@@ -6,6 +6,7 @@ import 'package:arka_payroll/core/layout/arka_layout.dart';
 import 'package:arka_payroll/core/role_labels.dart';
 import 'package:arka_payroll/core/theme/arka_theme.dart';
 import 'package:arka_payroll/presentation/shell/app_scaffold.dart';
+import 'package:arka_payroll/presentation/shell/main_tab_shell.dart';
 import 'package:arka_payroll/presentation/widgets/arka_fab.dart';
 import 'package:arka_payroll/presentation/widgets/arka_ui.dart';
 import 'package:arka_payroll/providers/app_providers.dart';
@@ -13,7 +14,9 @@ import 'package:arka_payroll/providers/app_providers.dart';
 enum _PeopleFilter { all, admins, employees, noPay }
 
 class EmployeesScreen extends ConsumerStatefulWidget {
-  const EmployeesScreen({super.key});
+  const EmployeesScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   ConsumerState<EmployeesScreen> createState() => _EmployeesScreenState();
@@ -57,21 +60,7 @@ class _EmployeesScreenState extends ConsumerState<EmployeesScreen> {
     final wide = context.isDesktop;
     final users = ref.watch(employeesProvider);
 
-    return AppScaffold(
-      title: 'People',
-      subtitle: 'Everyone on payroll, their access and pay package',
-      actions: wide
-          ? [
-              FilledButton.icon(
-                onPressed: _openAdd,
-                icon: const Icon(Icons.person_add_alt_1_rounded, size: 20),
-                label: const Text('Add user'),
-              ),
-            ]
-          : null,
-      floatingActionButton:
-          wide ? null : ArkaAddFab(label: 'Add user', onPressed: _openAdd),
-      child: ArkaAsync<List<Map<String, dynamic>>>(
+    final asyncChild = ArkaAsync<List<Map<String, dynamic>>>(
         value: users,
         onRetry: () => ref.invalidate(employeesProvider),
         data: (all) {
@@ -162,7 +151,38 @@ class _EmployeesScreenState extends ConsumerState<EmployeesScreen> {
             ),
           );
         },
-      ),
+      );
+
+    final scaffoldProps = (
+      title: 'People',
+      subtitle: 'Everyone on payroll, their access and pay package',
+      actions: wide
+          ? [
+              FilledButton.icon(
+                onPressed: _openAdd,
+                icon: const Icon(Icons.person_add_alt_1_rounded, size: 20),
+                label: const Text('Add user'),
+              ),
+            ]
+          : null,
+      fab: wide ? null : ArkaAddFab(label: 'Add user', onPressed: _openAdd),
+    );
+
+    if (widget.embedded) {
+      return EmbeddedScaffold(
+        title: scaffoldProps.title,
+        subtitle: scaffoldProps.subtitle,
+        actions: scaffoldProps.actions,
+        floatingActionButton: scaffoldProps.fab,
+        child: asyncChild,
+      );
+    }
+    return AppScaffold(
+      title: scaffoldProps.title,
+      subtitle: scaffoldProps.subtitle,
+      actions: scaffoldProps.actions,
+      floatingActionButton: scaffoldProps.fab,
+      child: asyncChild,
     );
   }
 

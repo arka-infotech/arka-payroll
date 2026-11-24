@@ -4,13 +4,23 @@ import 'package:intl/intl.dart';
 import 'package:arka_payroll/core/theme/arka_theme.dart';
 import 'package:arka_payroll/data/leave/leave_repository.dart';
 import 'package:arka_payroll/presentation/shell/app_scaffold.dart';
+import 'package:arka_payroll/presentation/shell/main_tab_shell.dart';
 import 'package:arka_payroll/presentation/widgets/arka_error_view.dart';
 import 'package:arka_payroll/presentation/widgets/arka_fab.dart';
 import 'package:arka_payroll/presentation/widgets/arka_ui.dart';
 import 'package:arka_payroll/providers/app_providers.dart';
 
 class EmployeeLeaveScreen extends ConsumerStatefulWidget {
-  const EmployeeLeaveScreen({super.key});
+  const EmployeeLeaveScreen({
+    super.key,
+    this.embedded = false,
+    this.bodyOnly = false,
+  });
+
+  final bool embedded;
+
+  /// Content only — nest inside another screen (e.g. HR Leave → Mine).
+  final bool bodyOnly;
 
   @override
   ConsumerState<EmployeeLeaveScreen> createState() =>
@@ -152,17 +162,14 @@ class _EmployeeLeaveScreenState extends ConsumerState<EmployeeLeaveScreen> {
     final balance = ref.watch(myLeaveBalanceProvider);
     final requests = ref.watch(myLeaveRequestsProvider);
 
-    return AppScaffold(
-      title: 'Leave',
-      subtitle: 'Apply and track your leave requests',
-      floatingActionButton: _applying
-          ? null
-          : ArkaAddFab(
-              icon: Icons.add_rounded,
-              label: 'Apply',
-              onPressed: _apply,
-            ),
-      child: RefreshIndicator(
+    final fab = _applying
+        ? null
+        : ArkaAddFab(
+            icon: Icons.add_rounded,
+            label: 'Apply',
+            onPressed: _apply,
+          );
+    final content = RefreshIndicator(
         onRefresh: () async {
           invalidateLeaveData(ref);
           await ref.read(myLeaveRequestsProvider.future);
@@ -184,6 +191,46 @@ class _EmployeeLeaveScreenState extends ConsumerState<EmployeeLeaveScreen> {
                       message:
                           'HR has not set your leave quota for this year yet.',
                     )
+                  else if (b.casual != null || b.earned != null) ...[
+                    if (b.casual != null) ...[
+                      Text('Casual', style: context.tt.labelLarge),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 8,
+                        children: [
+                          _StatChip('Total', '${b.casual!.total}'),
+                          _StatChip('Used', '${b.casual!.used}'),
+                          _StatChip('Pending', '${b.casual!.pending}'),
+                          _StatChip('Left', '${b.casual!.remaining}'),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    if (b.earned != null) ...[
+                      Text('Earned / privilege', style: context.tt.labelLarge),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 8,
+                        children: [
+                          _StatChip('Total', '${b.earned!.total}'),
+                          _StatChip('Used', '${b.earned!.used}'),
+                          _StatChip('Pending', '${b.earned!.pending}'),
+                          _StatChip('Left', '${b.earned!.remaining}'),
+                        ],
+                      ),
+                      if (b.earnedNote != null && b.earnedNote!.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          b.earnedNote!,
+                          style: context.tt.bodySmall?.copyWith(
+                            color: context.cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ]
                   else
                     Wrap(
                       spacing: 12,
@@ -246,7 +293,35 @@ class _EmployeeLeaveScreenState extends ConsumerState<EmployeeLeaveScreen> {
             ),
           ],
         ),
-      ),
+      );
+
+    if (widget.bodyOnly) {
+      return Stack(
+        children: [
+          content,
+          if (fab != null)
+            Positioned(
+              right: 16,
+              bottom: 16,
+              child: fab,
+            ),
+        ],
+      );
+    }
+
+    if (widget.embedded) {
+      return EmbeddedScaffold(
+        title: 'Leave',
+        subtitle: 'Apply and track your leave requests',
+        floatingActionButton: fab,
+        child: content,
+      );
+    }
+    return AppScaffold(
+      title: 'Leave',
+      subtitle: 'Apply and track your leave requests',
+      floatingActionButton: fab,
+      child: content,
     );
   }
 }

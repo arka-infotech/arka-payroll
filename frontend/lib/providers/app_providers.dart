@@ -62,6 +62,7 @@ void invalidateLeaveData(WidgetRef ref) {
   ref.invalidate(myLeaveBalanceProvider);
   ref.invalidate(myLeaveRequestsProvider);
   ref.invalidate(pendingLeaveProvider);
+  ref.invalidate(allLeaveRequestsProvider);
   ref.invalidate(leaveCalendarProvider);
 }
 
@@ -210,6 +211,12 @@ final pendingLeaveProvider =
     FutureProvider.autoDispose<List<LeaveRequestRow>>((ref) async {
   autoRefresh(ref, const Duration(seconds: 30));
   return ref.watch(leaveRepositoryProvider).pending();
+});
+
+final allLeaveRequestsProvider =
+    FutureProvider.autoDispose<List<LeaveRequestRow>>((ref) async {
+  autoRefresh(ref, const Duration(seconds: 45));
+  return ref.watch(leaveRepositoryProvider).allRequests();
 });
 
 final leaveCalendarProvider = FutureProvider.autoDispose

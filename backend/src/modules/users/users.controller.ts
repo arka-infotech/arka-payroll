@@ -13,6 +13,7 @@ import {
 import { UsersService } from './users.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
+import { SelfUpdateProfileDto } from './dto/self-update.dto';
 import { UpsertSalaryStructureDto } from './dto/upsert-salary-structure.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -41,12 +42,31 @@ export class UsersController {
     return this.usersService.listVisibleUsers(user);
   }
 
+  /** Employee: own profile (bank / statutory completion). */
+  @Get('me/profile')
+  @Roles(AppRole.EMPLOYEE, AppRole.HR_ADMIN, AppRole.SUPER_ADMIN)
+  myProfile(@CurrentUser() user: JwtPayload) {
+    return this.usersService.getOwnProfile(user.sub);
+  }
+
+  @Patch('me/profile')
+  @Roles(AppRole.EMPLOYEE)
+  updateMyProfile(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: SelfUpdateProfileDto,
+  ) {
+    return this.usersService.selfUpdateProfile(user.sub, dto);
+  }
+
   @Get(':id')
-  @Roles(AppRole.HR_ADMIN, AppRole.SUPER_ADMIN)
+  @Roles(AppRole.HR_ADMIN, AppRole.SUPER_ADMIN, AppRole.EMPLOYEE)
   getOne(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: JwtPayload,
   ) {
+    if (user.role === AppRole.EMPLOYEE) {
+      return this.usersService.getOwnProfile(user.sub === id ? id : user.sub);
+    }
     return this.usersService.findVisibleById(id, user);
   }
 

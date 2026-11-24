@@ -10,6 +10,7 @@ import 'package:arka_payroll/core/parse_api_num.dart';
 import 'package:arka_payroll/core/theme/arka_theme.dart';
 import 'package:arka_payroll/data/payroll/payroll_repository.dart';
 import 'package:arka_payroll/presentation/shell/app_scaffold.dart';
+import 'package:arka_payroll/presentation/shell/main_tab_shell.dart';
 import 'package:arka_payroll/presentation/widgets/arka_error_view.dart';
 import 'package:arka_payroll/presentation/widgets/arka_ui.dart';
 import 'package:arka_payroll/providers/app_providers.dart';
@@ -23,7 +24,9 @@ String _monthLabel(SlipSummary s) =>
     DateFormat('MMMM yyyy').format(DateTime(s.year, s.month));
 
 class EmployeeSlipsScreen extends ConsumerStatefulWidget {
-  const EmployeeSlipsScreen({super.key});
+  const EmployeeSlipsScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   ConsumerState<EmployeeSlipsScreen> createState() =>
@@ -62,10 +65,7 @@ class _EmployeeSlipsScreenState extends ConsumerState<EmployeeSlipsScreen> {
     final slips = ref.watch(mySlipsProvider);
     final user = ref.watch(authStateProvider).user;
 
-    return AppScaffold(
-      title: 'Pay history',
-      subtitle: user == null ? null : 'Payslips for ${user.fullName}',
-      child: ArkaAsync<List<SlipSummary>>(
+    final body = ArkaAsync<List<SlipSummary>>(
         value: slips,
         onRetry: () => ref.invalidate(mySlipsProvider),
         data: (all) {
@@ -120,7 +120,20 @@ class _EmployeeSlipsScreenState extends ConsumerState<EmployeeSlipsScreen> {
             ),
           );
         },
-      ),
+      );
+
+    final subtitle = user == null ? null : 'Payslips for ${user.fullName}';
+    if (widget.embedded) {
+      return EmbeddedScaffold(
+        title: 'Pay history',
+        subtitle: subtitle,
+        child: body,
+      );
+    }
+    return AppScaffold(
+      title: 'Pay history',
+      subtitle: subtitle,
+      child: body,
     );
   }
 }

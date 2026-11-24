@@ -7,8 +7,10 @@ import 'package:arka_payroll/core/role_labels.dart';
 import 'package:arka_payroll/core/theme/arka_theme.dart';
 import 'package:arka_payroll/data/payroll/payroll_repository.dart';
 import 'package:arka_payroll/presentation/shell/app_scaffold.dart';
+import 'package:arka_payroll/presentation/shell/main_tab_shell.dart';
 import 'package:arka_payroll/presentation/widgets/arka_ui.dart';
 import 'package:arka_payroll/providers/app_providers.dart';
+import 'package:arka_payroll/providers/shell_providers.dart';
 
 String _greeting() {
   final h = DateTime.now().hour;
@@ -18,7 +20,9 @@ String _greeting() {
 }
 
 class DashboardScreen extends ConsumerWidget {
-  const DashboardScreen({super.key});
+  const DashboardScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -26,11 +30,7 @@ class DashboardScreen extends ConsumerWidget {
     final stats = ref.watch(dashboardProvider);
     final firstName = user?.firstName ?? 'there';
 
-    return AppScaffold(
-      title: 'Dashboard',
-      subtitle:
-          '${_greeting()}, $firstName · ${RoleLabels.display(user?.role)}',
-      titleWidget: Row(
+    final titleWidget = Row(
         children: [
           ArkaAvatar(user?.fullName ?? firstName,
               size: context.isDense ? 34 : 40),
@@ -54,28 +54,45 @@ class DashboardScreen extends ConsumerWidget {
             ),
           ),
         ],
+      );
+
+    final child = ArkaAsync<DashboardData>(
+      value: stats,
+      onRetry: () => ref.invalidate(dashboardProvider),
+      loading: const _DashboardSkeleton(),
+      data: (d) => RefreshIndicator(
+        onRefresh: () => ref.refresh(dashboardProvider.future),
+        child: _DashboardBody(data: d, isSuper: user?.isSuperAdmin == true),
       ),
-      child: ArkaAsync<DashboardData>(
-        value: stats,
-        onRetry: () => ref.invalidate(dashboardProvider),
-        loading: const _DashboardSkeleton(),
-        data: (d) => RefreshIndicator(
-          onRefresh: () => ref.refresh(dashboardProvider.future),
-          child: _DashboardBody(data: d, isSuper: user?.isSuperAdmin == true),
-        ),
-      ),
+    );
+
+    if (embedded) {
+      return EmbeddedScaffold(
+        title: 'Dashboard',
+        subtitle:
+            '${_greeting()}, $firstName · ${RoleLabels.display(user?.role)}',
+        titleWidget: titleWidget,
+        child: child,
+      );
+    }
+    return AppScaffold(
+      title: 'Dashboard',
+      subtitle:
+          '${_greeting()}, $firstName · ${RoleLabels.display(user?.role)}',
+      titleWidget: titleWidget,
+      child: child,
     );
   }
 }
 
-class _DashboardBody extends StatelessWidget {
+class _DashboardBody extends ConsumerWidget {
   const _DashboardBody({required this.data, required this.isSuper});
 
   final DashboardData data;
   final bool isSuper;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final d = data;
     final actions = _QuickActions(isSuper: isSuper);
     final recent = _RecentSlips(slips: d.slips);
@@ -96,7 +113,9 @@ class _DashboardBody extends StatelessWidget {
               value: '${d.activeEmployees}',
               icon: Icons.people_alt_rounded,
               tone: ArkaTone.primary,
-              onTap: () => context.go('/employees'),
+              onTap: () => ref
+                  .read(shellTabProvider.notifier)
+                  .setIndex(HrShellTabs.people),
             ),
             ArkaStatTile(
               label: 'Processed',
@@ -111,7 +130,9 @@ class _DashboardBody extends StatelessWidget {
               value: '${d.pendingDrafts}',
               icon: Icons.edit_note_rounded,
               tone: ArkaTone.warning,
-              onTap: () => context.go('/payslips'),
+              onTap: () => ref
+                  .read(shellTabProvider.notifier)
+                  .setIndex(HrShellTabs.payslips),
             ),
             ArkaStatTile(
               label: 'Left to punch',
@@ -119,7 +140,9 @@ class _DashboardBody extends StatelessWidget {
               value: '${d.toPunch}',
               icon: Icons.pending_actions_rounded,
               tone: ArkaTone.info,
-              onTap: () => context.go('/punch'),
+              onTap: () => ref
+                  .read(shellTabProvider.notifier)
+                  .setIndex(HrShellTabs.punch),
             ),
           ],
         ).animate().fadeIn(delay: 80.ms, duration: 300.ms),
@@ -147,13 +170,13 @@ class _DashboardBody extends StatelessWidget {
   }
 }
 
-class _PayrollHero extends StatelessWidget {
+class _PayrollHero extends ConsumerWidget {
   const _PayrollHero({required this.data});
 
   final DashboardData data;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final p = context.palette;
     final period = PayPeriod.now();
     final pct = (data.progress * 100).round();
@@ -270,7 +293,9 @@ class _PayrollHero extends StatelessWidget {
                         padding: EdgeInsets.symmetric(
                             horizontal: short ? 10 : 16),
                       ),
-                      onPressed: () => context.go('/punch'),
+                      onPressed: () => ref
+                          .read(shellTabProvider.notifier)
+                          .setIndex(HrShellTabs.punch),
                       icon: const Icon(Icons.payments_rounded, size: 20),
                       label: Text(short ? 'Punch' : 'Punch salary'),
                     );
@@ -282,7 +307,9 @@ class _PayrollHero extends StatelessWidget {
                         side: BorderSide(
                             color: Colors.white.withValues(alpha: 0.45)),
                       ),
-                      onPressed: () => context.go('/payslips'),
+                      onPressed: () => ref
+                          .read(shellTabProvider.notifier)
+                          .setIndex(HrShellTabs.payslips),
                       icon: const Icon(Icons.receipt_long_rounded, size: 20),
                       label: Text(short ? 'Slips' : 'View payslips'),
                     );
@@ -341,17 +368,17 @@ class _Ring extends StatelessWidget {
   }
 }
 
-class _QuickActions extends StatelessWidget {
+class _QuickActions extends ConsumerWidget {
   const _QuickActions({required this.isSuper});
 
   final bool isSuper;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final items = [
       ArkaQuickAction(
         title: 'Add employee',
-        subtitle: 'Profile, bank and pay package',
+        subtitle: 'Login, profile, then pay package',
         icon: Icons.person_add_alt_1_rounded,
         tone: ArkaTone.primary,
         onTap: () => context.push('/employees/add'),
@@ -361,14 +388,16 @@ class _QuickActions extends StatelessWidget {
         subtitle: 'Attendance, bonus and lock',
         icon: Icons.payments_rounded,
         tone: ArkaTone.success,
-        onTap: () => context.go('/punch'),
+        onTap: () =>
+            ref.read(shellTabProvider.notifier).setIndex(HrShellTabs.punch),
       ),
       ArkaQuickAction(
         title: 'Payslips & PDF',
         subtitle: 'Review, edit and download',
         icon: Icons.receipt_long_rounded,
         tone: ArkaTone.info,
-        onTap: () => context.go('/payslips'),
+        onTap: () =>
+            ref.read(shellTabProvider.notifier).setIndex(HrShellTabs.payslips),
       ),
       if (isSuper)
         ArkaQuickAction(
@@ -376,7 +405,8 @@ class _QuickActions extends StatelessWidget {
           subtitle: 'Presence, bans and audit log',
           icon: Icons.shield_rounded,
           tone: ArkaTone.warning,
-          onTap: () => context.go('/admin'),
+          onTap: () =>
+              ref.read(shellTabProvider.notifier).setIndex(HrShellTabs.root),
         ),
     ];
     return Column(
@@ -392,13 +422,13 @@ class _QuickActions extends StatelessWidget {
   }
 }
 
-class _RecentSlips extends StatelessWidget {
+class _RecentSlips extends ConsumerWidget {
   const _RecentSlips({required this.slips});
 
   final List<PeriodSlipRow> slips;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final shown = slips.take(6).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -407,7 +437,8 @@ class _RecentSlips extends StatelessWidget {
           'This month’s payslips',
           subtitle: '${slips.length} total',
           action: TextButton(
-            onPressed: () => context.go('/payslips'),
+            onPressed: () =>
+                ref.read(shellTabProvider.notifier).setIndex(HrShellTabs.payslips),
             child: const Text('See all'),
           ),
         ),

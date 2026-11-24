@@ -3,99 +3,41 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:arka_payroll/core/theme/arka_theme.dart';
 import 'package:arka_payroll/data/leave/leave_repository.dart';
+import 'package:arka_payroll/presentation/employee/employee_leave_screen.dart';
 import 'package:arka_payroll/presentation/shell/app_scaffold.dart';
+import 'package:arka_payroll/presentation/shell/main_tab_shell.dart';
 import 'package:arka_payroll/presentation/widgets/arka_error_view.dart';
 import 'package:arka_payroll/presentation/widgets/arka_ui.dart';
 import 'package:arka_payroll/providers/app_providers.dart';
 
+enum _LeaveFilter { pending, all, mine }
+
 /// HR: approve/reject leave requests.
-class HrLeaveScreen extends ConsumerWidget {
-  const HrLeaveScreen({super.key});
+class HrLeaveScreen extends ConsumerStatefulWidget {
+  const HrLeaveScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final pending = ref.watch(pendingLeaveProvider);
+  ConsumerState<HrLeaveScreen> createState() => _HrLeaveScreenState();
+}
 
-    return AppScaffold(
-      title: 'Leave approvals',
-      subtitle: 'Review employee leave requests',
-      child: ArkaAsync<List<LeaveRequestRow>>(
-        value: pending,
-        onRetry: () => ref.invalidate(pendingLeaveProvider),
-        data: (rows) {
-          if (rows.isEmpty) {
-            return RefreshIndicator(
-              onRefresh: () async {
-                invalidateLeaveData(ref);
-                await ref.read(pendingLeaveProvider.future);
-              },
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                children: const [
-                  SizedBox(height: 80),
-                  ArkaEmptyState(
-                    icon: Icons.verified_outlined,
-                    title: 'All caught up',
-                    message: 'No pending leave requests.',
-                  ),
-                ],
-              ),
-            );
-          }
-          return RefreshIndicator(
-            onRefresh: () async {
-              invalidateLeaveData(ref);
-              await ref.read(pendingLeaveProvider.future);
-            },
-            child: ListView.separated(
-              padding: const EdgeInsets.only(top: 8, bottom: 24),
-              itemCount: rows.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (context, i) {
-                final r = rows[i];
-                return ListTile(
-                  title: Text(
-                    r.employeeName?.isNotEmpty == true
-                        ? r.employeeName!
-                        : 'Employee',
-                    style: context.tt.titleSmall,
-                  ),
-                  subtitle: Text(
-                    '${r.type} · ${r.days}d\n'
-                    '${DateFormat('dd MMM yyyy').format(r.startDate.toLocal())}'
-                    ' – ${DateFormat('dd MMM yyyy').format(r.endDate.toLocal())}'
-                    '${r.reason == null || r.reason!.isEmpty ? '' : '\n${r.reason}'}',
-                  ),
-                  isThreeLine: true,
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        tooltip: 'Reject',
-                        onPressed: () => _review(context, ref, r, false),
-                        icon: Icon(Icons.close_rounded,
-                            color: context.cs.error),
-                      ),
-                      IconButton(
-                        tooltip: 'Approve',
-                        onPressed: () => _review(context, ref, r, true),
-                        icon: Icon(Icons.check_circle_rounded,
-                            color: context.cs.primary),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          );
-        },
-      ),
-    );
+class _HrLeaveScreenState extends ConsumerState<HrLeaveScreen> {
+  _LeaveFilter _filter = _LeaveFilter.pending;
+
+  Future<void> _refresh() async {
+    invalidateLeaveData(ref);
+    if (_filter == _LeaveFilter.pending) {
+      await ref.read(pendingLeaveProvider.future);
+    } else if (_filter == _LeaveFilter.all) {
+      await ref.read(allLeaveRequestsProvider.future);
+    } else {
+      await ref.read(myLeaveRequestsProvider.future);
+    }
   }
 
   Future<void> _review(
     BuildContext context,
-    WidgetRef ref,
     LeaveRequestRow row,
     bool approve,
   ) async {
@@ -120,5 +62,228 @@ class HrLeaveScreen extends ConsumerWidget {
     } catch (e) {
       if (context.mounted) ArkaSnack.error(context, e);
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filterBar = Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: SegmentedButton<_LeaveFilter>(
+        style: ButtonStyle(
+          visualDensity: VisualDensity.compact,
+          backgroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return context.cs.secondaryContainer;
+            }
+            return context.cs.surfaceContainerHighest;
+          }),
+        ),
+        segments: const [
+          ButtonSegment(
+            value: _LeaveFilter.pending,
+            label: Text('Pending'),
+            icon: Icon(Icons.hourglass_top_rounded, size: 18),
+          ),
+          ButtonSegment(
+            value: _LeaveFilter.all,
+            label: Text('All'),
+            icon: Icon(Icons.list_alt_rounded, size: 18),
+          ),
+          ButtonSegment(
+            value: _LeaveFilter.mine,
+            label: Text('Mine'),
+            icon: Icon(Icons.person_outline_rounded, size: 18),
+          ),
+        ],
+        selected: {_filter},
+        onSelectionChanged: (s) => setState(() => _filter = s.first),
+      ),
+    );
+
+    final Widget main;
+    if (_filter == _LeaveFilter.mine) {
+      main = const EmployeeLeaveScreen(bodyOnly: true);
+    } else {
+      final async = _filter == _LeaveFilter.pending
+          ? ref.watch(pendingLeaveProvider)
+          : ref.watch(allLeaveRequestsProvider);
+      main = ArkaAsync<List<LeaveRequestRow>>(
+        value: async,
+        onRetry: () {
+          if (_filter == _LeaveFilter.pending) {
+            ref.invalidate(pendingLeaveProvider);
+          } else {
+            ref.invalidate(allLeaveRequestsProvider);
+          }
+        },
+        data: (rows) {
+          final list = _filter == _LeaveFilter.pending
+              ? rows
+              : (List<LeaveRequestRow>.from(rows)
+                ..sort((a, b) => b.startDate.compareTo(a.startDate)));
+
+          if (list.isEmpty) {
+            return RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  const SizedBox(height: 48),
+                  ArkaEmptyState(
+                    icon: _filter == _LeaveFilter.pending
+                        ? Icons.verified_outlined
+                        : Icons.event_busy_outlined,
+                    title: _filter == _LeaveFilter.pending
+                        ? 'All caught up'
+                        : 'No leave requests',
+                    message: _filter == _LeaveFilter.pending
+                        ? 'No pending leave requests.'
+                        : 'Nothing on record yet.',
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView.separated(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 24),
+              itemCount: list.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (context, i) =>
+                  _LeaveCard(row: list[i], onReview: _review),
+            ),
+          );
+        },
+      );
+    }
+
+    final body = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        filterBar,
+        Expanded(child: main),
+      ],
+    );
+
+    if (widget.embedded) {
+      return EmbeddedScaffold(
+        title: 'Leave',
+        subtitle: 'Approvals, team history, and your own leave',
+        child: body,
+      );
+    }
+    return AppScaffold(
+      title: 'Leave',
+      subtitle: 'Approvals, team history, and your own leave',
+      child: body,
+    );
+  }
+}
+
+class _LeaveCard extends StatelessWidget {
+  const _LeaveCard({required this.row, required this.onReview});
+
+  final LeaveRequestRow row;
+  final Future<void> Function(BuildContext, LeaveRequestRow, bool) onReview;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = row.employeeName?.isNotEmpty == true
+        ? row.employeeName!
+        : 'Employee';
+    final range =
+        '${DateFormat('dd MMM yyyy').format(row.startDate.toLocal())} – '
+        '${DateFormat('dd MMM yyyy').format(row.endDate.toLocal())}';
+    final pending = row.status == 'PENDING';
+
+    final (tone, label) = switch (row.status) {
+      'APPROVED' => (ArkaTone.success, 'Approved'),
+      'REJECTED' => (ArkaTone.danger, 'Rejected'),
+      'PENDING' => (ArkaTone.warning, 'Pending'),
+      _ => (ArkaTone.neutral, row.status),
+    };
+
+    return Card(
+      elevation: 0,
+      color: context.cs.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: context.cs.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ArkaAvatar(name, size: 44),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name, style: context.tt.titleMedium),
+                      if (row.employeeCode != null &&
+                          row.employeeCode!.isNotEmpty)
+                        Text(row.employeeCode!,
+                            style: context.tt.bodySmall),
+                    ],
+                  ),
+                ),
+                ArkaStatusChip(row.type, tone: ArkaTone.primary, compact: true),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.date_range_rounded,
+                    size: 18, color: context.cs.onSurfaceVariant),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text('$range · ${row.days} day${row.days == 1 ? '' : 's'}',
+                      style: context.tt.bodyMedium),
+                ),
+                ArkaStatusChip(label, tone: tone, dot: true, compact: true),
+              ],
+            ),
+            if (row.reason != null && row.reason!.trim().isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                row.reason!.trim(),
+                style: context.tt.bodyMedium
+                    ?.copyWith(color: context.cs.onSurfaceVariant),
+              ),
+            ],
+            if (pending) ...[
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => onReview(context, row, false),
+                      icon: Icon(Icons.close_rounded, color: context.cs.error),
+                      label: const Text('Reject'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => onReview(context, row, true),
+                      icon: const Icon(Icons.check_rounded),
+                      label: const Text('Approve'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }

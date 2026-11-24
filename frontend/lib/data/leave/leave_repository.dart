@@ -1,6 +1,28 @@
 import 'package:arka_payroll/core/parse_api_num.dart';
 import 'package:arka_payroll/data/auth/auth_repository.dart';
 
+class LeaveTypeBalance {
+  LeaveTypeBalance({
+    required this.total,
+    required this.used,
+    required this.pending,
+    required this.remaining,
+  });
+
+  final int total;
+  final int used;
+  final int pending;
+  final int remaining;
+
+  factory LeaveTypeBalance.fromJson(Map<String, dynamic> json) =>
+      LeaveTypeBalance(
+        total: parseApiNum(json['total'] ?? json['totalDays']).toInt(),
+        used: parseApiNum(json['used'] ?? json['usedDays']).toInt(),
+        pending: parseApiNum(json['pending'] ?? json['pendingDays']).toInt(),
+        remaining: parseApiNum(json['remaining'] ?? json['remainingDays']).toInt(),
+      );
+}
+
 class LeaveBalance {
   LeaveBalance({
     required this.year,
@@ -9,6 +31,9 @@ class LeaveBalance {
     required this.pendingDays,
     required this.remainingDays,
     required this.hasQuota,
+    this.casual,
+    this.earned,
+    this.earnedNote,
   });
 
   final int year;
@@ -17,15 +42,28 @@ class LeaveBalance {
   final int pendingDays;
   final int remainingDays;
   final bool hasQuota;
+  final LeaveTypeBalance? casual;
+  final LeaveTypeBalance? earned;
+  final String? earnedNote;
 
-  factory LeaveBalance.fromJson(Map<String, dynamic> json) => LeaveBalance(
-        year: parseApiNum(json['year']).toInt(),
-        totalDays: parseApiNum(json['totalDays']).toInt(),
-        usedDays: parseApiNum(json['usedDays']).toInt(),
-        pendingDays: parseApiNum(json['pendingDays']).toInt(),
-        remainingDays: parseApiNum(json['remainingDays']).toInt(),
-        hasQuota: json['hasQuota'] as bool? ?? false,
-      );
+  factory LeaveBalance.fromJson(Map<String, dynamic> json) {
+    final earnedMap = json['earned'] is Map<String, dynamic>
+        ? json['earned'] as Map<String, dynamic>
+        : null;
+    return LeaveBalance(
+      year: parseApiNum(json['year']).toInt(),
+      totalDays: parseApiNum(json['totalDays']).toInt(),
+      usedDays: parseApiNum(json['usedDays']).toInt(),
+      pendingDays: parseApiNum(json['pendingDays']).toInt(),
+      remainingDays: parseApiNum(json['remainingDays']).toInt(),
+      hasQuota: json['hasQuota'] as bool? ?? false,
+      casual: json['casual'] is Map<String, dynamic>
+          ? LeaveTypeBalance.fromJson(json['casual'] as Map<String, dynamic>)
+          : null,
+      earned: earnedMap != null ? LeaveTypeBalance.fromJson(earnedMap) : null,
+      earnedNote: earnedMap?['note'] as String?,
+    );
+  }
 }
 
 class LeaveRequestRow {

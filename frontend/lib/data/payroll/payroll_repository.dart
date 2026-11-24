@@ -356,6 +356,12 @@ class PayrollRepository {
     return await _auth.api.get('/users/$userId') as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> fetchMyProfile() async =>
+      await _auth.api.get('/users/me/profile') as Map<String, dynamic>;
+
+  Future<Map<String, dynamic>> updateMyProfile(Map<String, dynamic> body) async =>
+      await _auth.api.patch('/users/me/profile', body: body) as Map<String, dynamic>;
+
   Future<Map<String, dynamic>> createUser(Map<String, dynamic> body) async {
     return await _auth.api.post('/users', body: body) as Map<String, dynamic>;
   }

@@ -29,6 +29,7 @@ import {
   canManageUser,
   visibleUsersWhere,
 } from '../users/user-visibility.util';
+import { LeaveService } from '../leave/leave.service';
 
 const MONTH_LABELS = [
   '',
@@ -56,6 +57,7 @@ export class PayrollService {
     private readonly audit: AuditService,
     private readonly config: ConfigService,
     private readonly mail: MailService,
+    private readonly leave: LeaveService,
   ) {}
 
   async dashboardStats() {
@@ -630,13 +632,43 @@ export class PayrollService {
     if (workingDays > calDays) workingDays = calDays;
     if (workingDays < 1) workingDays = calDays;
 
+    // Prefer approved unpaid leave from Leave module; fall back to existing draft / prior slip.
+    let unpaidLeaveDays = existing?.unpaidLeaveDays ?? 0;
+    if (!existing) {
+      try {
+        unpaidLeaveDays = await this.leave.unpaidLeaveDaysInMonth(
+          userId,
+          year,
+          month,
+        );
+      } catch {
+        unpaidLeaveDays = prev?.unpaidLeaveDays ?? 0;
+      }
+    } else if (existing.status === PayrollStatus.DRAFT) {
+      try {
+        const fromLeave = await this.leave.unpaidLeaveDaysInMonth(
+          userId,
+          year,
+          month,
+        );
+        // Refresh LOP from leave when draft still mirrors previous month's unpaid count.
+        if (
+          fromLeave > 0 ||
+          existing.unpaidLeaveDays === (prev?.unpaidLeaveDays ?? -1)
+        ) {
+          unpaidLeaveDays = fromLeave;
+        }
+      } catch {
+        /* keep existing */
+      }
+    }
+
     const dto: ProcessPayrollDto = {
       userId,
       year,
       month,
       workingDaysInMonth: workingDays,
-      unpaidLeaveDays:
-        existing?.unpaidLeaveDays ?? prev?.unpaidLeaveDays ?? 0,
+      unpaidLeaveDays,
       bonus: existing ? toNumber(existing.bonus) : toNumber(prev?.bonus ?? 0),
       specialAdjustment: existing
         ? toNumber(existing.specialAdjustment)

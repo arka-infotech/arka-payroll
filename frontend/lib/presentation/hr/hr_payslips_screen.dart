@@ -9,12 +9,15 @@ import 'package:arka_payroll/core/layout/arka_layout.dart';
 import 'package:arka_payroll/core/theme/arka_theme.dart';
 import 'package:arka_payroll/data/payroll/payroll_repository.dart';
 import 'package:arka_payroll/presentation/shell/app_scaffold.dart';
+import 'package:arka_payroll/presentation/shell/main_tab_shell.dart';
 import 'package:arka_payroll/presentation/widgets/arka_error_view.dart';
 import 'package:arka_payroll/presentation/widgets/arka_ui.dart';
 import 'package:arka_payroll/providers/app_providers.dart';
 
 class HrPayslipsScreen extends ConsumerStatefulWidget {
-  const HrPayslipsScreen({super.key});
+  const HrPayslipsScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   ConsumerState<HrPayslipsScreen> createState() => _HrPayslipsScreenState();
@@ -150,11 +153,7 @@ class _HrPayslipsScreenState extends ConsumerState<HrPayslipsScreen> {
     final me = ref.watch(authStateProvider).user?.id;
     final wide = context.isDesktop;
 
-    return AppScaffold(
-      title: 'Payslips',
-      subtitle:
-          'Lock in Punch salary to calculate & email. Credit day is only the pay date on the PDF.',
-      child: Column(
+    final content = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: 8),
@@ -313,7 +312,21 @@ class _HrPayslipsScreenState extends ConsumerState<HrPayslipsScreen> {
             ),
           ),
         ],
-      ),
+      );
+
+    if (widget.embedded) {
+      return EmbeddedScaffold(
+        title: 'Payslips',
+        subtitle:
+            'Lock in Punch salary to calculate & email. Credit day is only the pay date on the PDF.',
+        child: content,
+      );
+    }
+    return AppScaffold(
+      title: 'Payslips',
+      subtitle:
+          'Lock in Punch salary to calculate & email. Credit day is only the pay date on the PDF.',
+      child: content,
     );
   }
 }

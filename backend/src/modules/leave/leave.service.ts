@@ -34,6 +34,30 @@ function inclusiveDays(start: Date, end: Date): number {
   return Math.floor(ms / 86_400_000) + 1;
 }
 
+/** Mon–Fri weekdays between two UTC date-only values (inclusive). */
+function countWeekdays(from: Date, to: Date): number {
+  let n = 0;
+  const d = new Date(from.getTime());
+  while (d.getTime() <= to.getTime()) {
+    const day = d.getUTCDay();
+    if (day !== 0 && day !== 6) n += 1;
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return n;
+}
+
+function overlapDays(
+  rangeStart: Date,
+  rangeEnd: Date,
+  windowStart: Date,
+  windowEnd: Date,
+): number {
+  const s = Math.max(rangeStart.getTime(), windowStart.getTime());
+  const e = Math.min(rangeEnd.getTime(), windowEnd.getTime());
+  if (e < s) return 0;
+  return inclusiveDays(new Date(s), new Date(e));
+}
+
 @Injectable()
 export class LeaveService {
   constructor(
@@ -58,6 +82,70 @@ export class LeaveService {
     });
   }
 
+  /**
+   * Maharashtra Shops & Establishments — earned/privilege leave for calendar year `year`
+   * is earned from working days in the previous calendar year (240+ weekdays → 1/20, max 18).
+   */
+  async computeEarnedLeave(userId: string, year: number) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { dateOfJoining: true },
+    });
+    if (!user?.dateOfJoining) {
+      return {
+        earnedDays: 0,
+        qualifyingDays: 0,
+        eligible: false,
+        note: 'Date of joining required for earned leave',
+      };
+    }
+
+    const doj = user.dateOfJoining;
+    // Joined on/after 1 Jul 2025 → not eligible for EL in 2026 (policy).
+    if (year === 2026) {
+      const cutoff = Date.UTC(2025, 6, 1);
+      if (doj.getTime() >= cutoff) {
+        return {
+          earnedDays: 0,
+          qualifyingDays: 0,
+          eligible: false,
+          note: 'Joined H2 2025 — not eligible for 2026 earned leave',
+        };
+      }
+    }
+
+    const prevYear = year - 1;
+    const yearStart = new Date(Date.UTC(prevYear, 0, 1));
+    const yearEnd = new Date(Date.UTC(prevYear, 11, 31));
+    const from = doj.getTime() > yearStart.getTime() ? doj : yearStart;
+    if (from.getTime() > yearEnd.getTime()) {
+      return {
+        earnedDays: 0,
+        qualifyingDays: 0,
+        eligible: false,
+        note: `Joined after ${prevYear}`,
+      };
+    }
+
+    const qualifyingDays = countWeekdays(from, yearEnd);
+    if (qualifyingDays < 240) {
+      return {
+        earnedDays: 0,
+        qualifyingDays,
+        eligible: false,
+        note: `Need 240 working days in ${prevYear} (had ${qualifyingDays})`,
+      };
+    }
+
+    const earnedDays = Math.min(18, Math.floor(qualifyingDays / 20));
+    return {
+      earnedDays,
+      qualifyingDays,
+      eligible: true,
+      note: `1 day per 20 worked in ${prevYear} (max 18)`,
+    };
+  }
+
   async myBalance(actor: JwtPayload, year?: number) {
     const y = year ?? new Date().getFullYear();
     return this.balanceForUser(actor.sub, y);
@@ -67,41 +155,97 @@ export class LeaveService {
     const quota = await this.prisma.leaveQuota.findUnique({
       where: { userId_year: { userId, year } },
     });
-    const used = await this.prisma.leaveRequest.aggregate({
+    const earned = await this.computeEarnedLeave(userId, year);
+    const yearStart = new Date(Date.UTC(year, 0, 1));
+    const yearEndExclusive = new Date(Date.UTC(year + 1, 0, 1));
+
+    const approved = await this.prisma.leaveRequest.findMany({
       where: {
         userId,
         status: LeaveStatus.APPROVED,
-        startDate: {
-          gte: new Date(Date.UTC(year, 0, 1)),
-          lt: new Date(Date.UTC(year + 1, 0, 1)),
-        },
-        type: { not: LeaveType.UNPAID },
+        startDate: { gte: yearStart, lt: yearEndExclusive },
       },
-      _sum: { days: true },
+      select: { type: true, days: true },
     });
-    const pending = await this.prisma.leaveRequest.aggregate({
+    const pending = await this.prisma.leaveRequest.findMany({
       where: {
         userId,
         status: LeaveStatus.PENDING,
-        startDate: {
-          gte: new Date(Date.UTC(year, 0, 1)),
-          lt: new Date(Date.UTC(year + 1, 0, 1)),
-        },
-        type: { not: LeaveType.UNPAID },
+        startDate: { gte: yearStart, lt: yearEndExclusive },
       },
-      _sum: { days: true },
+      select: { type: true, days: true },
     });
-    const total = quota?.totalDays ?? 0;
-    const usedDays = used._sum.days ?? 0;
-    const pendingDays = pending._sum.days ?? 0;
+
+    const sumType = (
+      rows: { type: LeaveType; days: number }[],
+      types: LeaveType[],
+    ) =>
+      rows
+        .filter((r) => types.includes(r.type))
+        .reduce((a, r) => a + r.days, 0);
+
+    const casualTypes = [LeaveType.CASUAL, LeaveType.SICK, LeaveType.OTHER];
+    const casualQuota = quota?.totalDays ?? 0;
+    const casualUsed = sumType(approved, casualTypes);
+    const casualPending = sumType(pending, casualTypes);
+    const earnedUsed = sumType(approved, [LeaveType.EARNED]);
+    const earnedPending = sumType(pending, [LeaveType.EARNED]);
+    const unpaidUsed = sumType(approved, [LeaveType.UNPAID]);
+
+    const totalDays = casualQuota + earned.earnedDays;
+    const usedDays = casualUsed + earnedUsed;
+    const pendingDays = casualPending + earnedPending;
+
     return {
       year,
-      totalDays: total,
+      /** Combined pool for UI compatibility. */
+      totalDays,
       usedDays,
       pendingDays,
-      remainingDays: Math.max(0, total - usedDays),
-      hasQuota: !!quota,
+      remainingDays: Math.max(0, totalDays - usedDays),
+      hasQuota: !!quota || earned.earnedDays > 0,
+      casual: {
+        totalDays: casualQuota,
+        usedDays: casualUsed,
+        pendingDays: casualPending,
+        remainingDays: Math.max(0, casualQuota - casualUsed),
+        hasQuota: !!quota,
+      },
+      earned: {
+        totalDays: earned.earnedDays,
+        usedDays: earnedUsed,
+        pendingDays: earnedPending,
+        remainingDays: Math.max(0, earned.earnedDays - earnedUsed),
+        qualifyingDays: earned.qualifyingDays,
+        eligible: earned.eligible,
+        note: earned.note,
+      },
+      unpaidUsedDays: unpaidUsed,
     };
+  }
+
+  /** Approved unpaid leave days overlapping a calendar month (for payslip LOP). */
+  async unpaidLeaveDaysInMonth(
+    userId: string,
+    year: number,
+    month: number,
+  ): Promise<number> {
+    const monthStart = new Date(Date.UTC(year, month - 1, 1));
+    const monthEnd = new Date(Date.UTC(year, month, 0));
+    const rows = await this.prisma.leaveRequest.findMany({
+      where: {
+        userId,
+        status: LeaveStatus.APPROVED,
+        type: LeaveType.UNPAID,
+        startDate: { lte: monthEnd },
+        endDate: { gte: monthStart },
+      },
+      select: { startDate: true, endDate: true },
+    });
+    return rows.reduce(
+      (sum, r) => sum + overlapDays(r.startDate, r.endDate, monthStart, monthEnd),
+      0,
+    );
   }
 
   async myRequests(actor: JwtPayload) {
@@ -117,11 +261,11 @@ export class LeaveService {
   }
 
   async apply(actor: JwtPayload, dto: ApplyLeaveDto) {
-    if (actor.role !== AppRole.EMPLOYEE && actor.role !== AppRole.HR_ADMIN) {
-      // HR can apply on behalf? For MVP only EMPLOYEE self-applies; HR uses admin path.
-    }
-    if (actor.role !== AppRole.EMPLOYEE) {
-      throw new ForbiddenException('Only employees apply for leave here');
+    if (
+      actor.role !== AppRole.EMPLOYEE &&
+      actor.role !== AppRole.HR_ADMIN
+    ) {
+      throw new ForbiddenException('Only staff can apply for leave here');
     }
 
     const start = parseDateOnly(dto.startDate);
@@ -134,15 +278,25 @@ export class LeaveService {
     const year = start.getUTCFullYear();
     if (dto.type !== LeaveType.UNPAID) {
       const bal = await this.balanceForUser(actor.sub, year);
-      if (!bal.hasQuota) {
-        throw new BadRequestException(
-          'No leave quota set for this year. Ask HR to assign your leave days.',
-        );
-      }
-      if (bal.remainingDays - bal.pendingDays < days) {
-        throw new BadRequestException(
-          `Not enough leave balance (remaining ${bal.remainingDays}, pending ${bal.pendingDays}, requested ${days})`,
-        );
+      if (dto.type === LeaveType.EARNED) {
+        const rem = bal.earned.remainingDays - bal.earned.pendingDays;
+        if (rem < days) {
+          throw new BadRequestException(
+            `Not enough earned leave (remaining ${bal.earned.remainingDays}, pending ${bal.earned.pendingDays}, requested ${days}). ${bal.earned.note}`,
+          );
+        }
+      } else {
+        if (!bal.casual.hasQuota) {
+          throw new BadRequestException(
+            'No casual leave quota set for this year. Ask HR to assign your leave days.',
+          );
+        }
+        const rem = bal.casual.remainingDays - bal.casual.pendingDays;
+        if (rem < days) {
+          throw new BadRequestException(
+            `Not enough casual leave (remaining ${bal.casual.remainingDays}, pending ${bal.casual.pendingDays}, requested ${days})`,
+          );
+        }
       }
     }
 

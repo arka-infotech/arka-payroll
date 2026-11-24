@@ -14,6 +14,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AppRole } from '../../common/enums/role.enum';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
+import { SelfUpdateProfileDto } from './dto/self-update.dto';
 import { UpsertSalaryStructureDto } from './dto/upsert-salary-structure.dto';
 import { AuditService } from '../audit/audit.service';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
@@ -136,12 +137,16 @@ export class UsersService {
         employeeCode: normalizeEmployeeCode(dto.employeeCode),
         designation: dto.designation.trim(),
         dateOfJoining: new Date(dto.dateOfJoining),
-        pan: dto.pan.trim().toUpperCase(),
+        pan: dto.pan?.trim()
+          ? dto.pan.trim().toUpperCase()
+          : 'AAAAA0000A',
         aadhaar: asNa(dto.aadhaar),
         uan: asNa(dto.uan),
-        bankName: dto.bankName.trim(),
-        bankAccountNumber: dto.bankAccountNumber.trim(),
-        bankIfsc: dto.bankIfsc.trim().toUpperCase(),
+        bankName: dto.bankName?.trim() || 'To be updated',
+        bankAccountNumber: dto.bankAccountNumber?.trim() || '0',
+        bankIfsc: dto.bankIfsc?.trim()
+          ? dto.bankIfsc.trim().toUpperCase()
+          : 'XXXX0000000',
         createdById: actor.sub,
       },
       select: USER_HR_SELECT,
@@ -158,6 +163,57 @@ export class UsersService {
     });
 
     return created;
+  }
+
+  async getOwnProfile(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: USER_HR_SELECT,
+    });
+    if (!user || user.status !== 'ACTIVE') {
+      throw new NotFoundException('Profile not found');
+    }
+    return user;
+  }
+
+  async selfUpdateProfile(userId: string, dto: SelfUpdateProfileDto) {
+    const existing = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!existing || existing.status !== 'ACTIVE') {
+      throw new NotFoundException('Profile not found');
+    }
+    if (existing.role !== Role.EMPLOYEE) {
+      throw new ForbiddenException('Only employees use self-service profile');
+    }
+
+    const data: Record<string, unknown> = {};
+    if (dto.pan !== undefined) data.pan = dto.pan.trim().toUpperCase();
+    if (dto.aadhaar !== undefined) data.aadhaar = asNa(dto.aadhaar);
+    if (dto.uan !== undefined) data.uan = asNa(dto.uan);
+    if (dto.bankName !== undefined) data.bankName = dto.bankName.trim();
+    if (dto.bankAccountNumber !== undefined) {
+      data.bankAccountNumber = dto.bankAccountNumber.trim();
+    }
+    if (dto.bankIfsc !== undefined) {
+      data.bankIfsc = dto.bankIfsc.trim().toUpperCase();
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data,
+      select: USER_HR_SELECT,
+    });
+
+    await this.audit.write({
+      actorId: userId,
+      actorEmail: existing.email,
+      actorRole: AppRole.EMPLOYEE,
+      action: 'USER_SELF_UPDATE',
+      entity: 'user',
+      entityId: userId,
+      summary: `Employee updated bank/statutory profile`,
+    });
+
+    return updated;
   }
 
   async updateEmployee(

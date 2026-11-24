@@ -8,6 +8,7 @@ import 'package:arka_payroll/core/parse_api_num.dart';
 import 'package:arka_payroll/core/theme/arka_theme.dart';
 import 'package:arka_payroll/data/payroll/payroll_repository.dart';
 import 'package:arka_payroll/presentation/shell/app_scaffold.dart';
+import 'package:arka_payroll/presentation/shell/main_tab_shell.dart';
 import 'package:arka_payroll/presentation/widgets/arka_error_view.dart';
 import 'package:arka_payroll/presentation/widgets/arka_ui.dart';
 import 'package:arka_payroll/providers/app_providers.dart';
@@ -20,9 +21,17 @@ import 'package:arka_payroll/providers/app_providers.dart';
 }
 
 class PunchSalaryScreen extends ConsumerStatefulWidget {
-  const PunchSalaryScreen(
-      {super.key, this.initialUserId, this.initialYear, this.initialMonth});
+  const PunchSalaryScreen({
+    super.key,
+    this.embedded = false,
+    this.showNav,
+    this.initialUserId,
+    this.initialYear,
+    this.initialMonth,
+  });
 
+  final bool embedded;
+  final bool? showNav;
   final String? initialUserId;
   final int? initialYear;
   final int? initialMonth;
@@ -298,12 +307,11 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
 
     final showEditor = wide || (_mobileEditing && selected != null);
 
-    return AppScaffold(
-      title: showEditor && selected != null && !wide
-          ? selected.name
-          : 'Punch salary',
-      subtitle: 'Attendance and variables for ${period.label}',
-      bottomBar: !showEditor || selected == null
+    final title = showEditor && selected != null && !wide
+        ? selected.name
+        : 'Punch salary';
+    final subtitle = 'Attendance and variables for ${period.label}';
+    final bottomBar = !showEditor || selected == null
           ? null
           : ArkaBottomBar(
               children: [
@@ -327,8 +335,8 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
                   ),
                 ),
               ],
-            ),
-      child: ArkaAsync<List<PayrollGridRow>>(
+            );
+    final body = ArkaAsync<List<PayrollGridRow>>(
         value: grid,
         onRetry: () => ref.invalidate(payrollGridProvider),
         data: (rows) {
@@ -457,7 +465,23 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
             ],
           );
         },
-      ),
+      );
+
+    final nav = widget.showNav ?? !widget.embedded;
+    if (widget.embedded) {
+      return EmbeddedScaffold(
+        title: title,
+        subtitle: subtitle,
+        bottomBar: bottomBar,
+        child: body,
+      );
+    }
+    return AppScaffold(
+      title: title,
+      subtitle: subtitle,
+      showNav: nav,
+      bottomBar: bottomBar,
+      child: body,
     );
   }
 

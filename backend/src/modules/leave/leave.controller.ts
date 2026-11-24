@@ -41,19 +41,19 @@ export class LeaveController {
   }
 
   @Get('me/requests')
-  @Roles(AppRole.EMPLOYEE)
+  @Roles(AppRole.EMPLOYEE, AppRole.HR_ADMIN)
   myRequests(@CurrentUser() user: JwtPayload) {
     return this.leave.myRequests(user);
   }
 
   @Post('me/requests')
-  @Roles(AppRole.EMPLOYEE)
+  @Roles(AppRole.EMPLOYEE, AppRole.HR_ADMIN)
   apply(@CurrentUser() user: JwtPayload, @Body() dto: ApplyLeaveDto) {
     return this.leave.apply(user, dto);
   }
 
   @Post('me/requests/:id/cancel')
-  @Roles(AppRole.EMPLOYEE)
+  @Roles(AppRole.EMPLOYEE, AppRole.HR_ADMIN)
   cancel(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseUUIDPipe) id: string,

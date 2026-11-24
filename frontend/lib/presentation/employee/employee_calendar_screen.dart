@@ -4,11 +4,19 @@ import 'package:intl/intl.dart';
 import 'package:arka_payroll/core/theme/arka_theme.dart';
 import 'package:arka_payroll/data/leave/leave_repository.dart';
 import 'package:arka_payroll/presentation/shell/app_scaffold.dart';
+import 'package:arka_payroll/presentation/shell/main_tab_shell.dart';
 import 'package:arka_payroll/presentation/widgets/arka_ui.dart';
 import 'package:arka_payroll/providers/app_providers.dart';
 
 class EmployeeCalendarScreen extends ConsumerStatefulWidget {
-  const EmployeeCalendarScreen({super.key});
+  const EmployeeCalendarScreen({
+    super.key,
+    this.embedded = false,
+    this.teamView = false,
+  });
+
+  final bool embedded;
+  final bool teamView;
 
   @override
   ConsumerState<EmployeeCalendarScreen> createState() =>
@@ -45,10 +53,10 @@ class _EmployeeCalendarScreenState
   Widget build(BuildContext context) {
     final cal = ref.watch(leaveCalendarProvider((_year, _month)));
 
-    return AppScaffold(
-      title: 'Calendar',
-      subtitle: 'Holidays and your leave',
-      child: Column(
+    final subtitle = widget.teamView
+        ? 'Team holidays and approved leave'
+        : 'Holidays and your leave';
+    final shell = Column(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
@@ -104,6 +112,11 @@ class _EmployeeCalendarScreenState
 
                 for (final l in data.leaves) {
                   markLeave(l);
+                }
+                if (widget.teamView) {
+                  for (final l in data.teamLeaves) {
+                    markLeave(l);
+                  }
                 }
 
                 return ListView(
@@ -194,13 +207,55 @@ class _EmployeeCalendarScreenState
                           '${DateFormat('dd MMM').format(l.startDate.toLocal())} – ${DateFormat('dd MMM').format(l.endDate.toLocal())} (${l.days}d)',
                         ),
                       ),
+                    if (widget.teamView) ...[
+                      const SizedBox(height: 8),
+                      const ArkaSectionTitle('Team leave'),
+                      if (data.teamLeaves.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            'No team leave this month.',
+                            style: context.tt.bodyMedium,
+                          ),
+                        ),
+                      for (final l in data.teamLeaves)
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.groups_outlined,
+                              color: context.cs.secondary),
+                          title: Text(
+                            l.employeeName?.isNotEmpty == true
+                                ? l.employeeName!
+                                : 'Team member',
+                            style: context.tt.titleSmall,
+                          ),
+                          subtitle: Text(
+                            '${l.type} · ${l.status} · '
+                            '${DateFormat('dd MMM').format(l.startDate.toLocal())} – '
+                            '${DateFormat('dd MMM').format(l.endDate.toLocal())} (${l.days}d)',
+                          ),
+                          isThreeLine: true,
+                        ),
+                    ],
                   ],
                 );
               },
             ),
           ),
         ],
-      ),
+      );
+
+    if (widget.embedded) {
+      return EmbeddedScaffold(
+        title: 'Calendar',
+        subtitle: subtitle,
+        child: shell,
+      );
+    }
+    return AppScaffold(
+      title: 'Calendar',
+      subtitle: subtitle,
+      child: shell,
     );
   }
 }
