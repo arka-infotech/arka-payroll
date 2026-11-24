@@ -24,11 +24,13 @@ class _EditUserScreenState extends ConsumerState<EditUserScreen> {
   final _form = UserFormData();
   final _formKey = GlobalKey<FormState>();
   final _scroll = ScrollController();
+  final _leaveDays = TextEditingController();
 
   Map<String, dynamic>? _user;
   Object? _loadError;
   Object? _saveError;
   bool _busy = false;
+  final int _leaveYear = DateTime.now().year;
 
   @override
   void initState() {
@@ -39,6 +41,7 @@ class _EditUserScreenState extends ConsumerState<EditUserScreen> {
   @override
   void dispose() {
     _form.dispose();
+    _leaveDays.dispose();
     _scroll.dispose();
     super.dispose();
   }
@@ -50,6 +53,14 @@ class _EditUserScreenState extends ConsumerState<EditUserScreen> {
           await ref.read(payrollRepositoryProvider).fetchUser(widget.userId);
       if (!mounted) return;
       _form.fillFrom(user);
+      try {
+        final bal = await ref
+            .read(leaveRepositoryProvider)
+            .getQuota(widget.userId, year: _leaveYear);
+        _leaveDays.text = bal.hasQuota ? '${bal.totalDays}' : '12';
+      } catch (_) {
+        _leaveDays.text = '12';
+      }
       setState(() => _user = user);
     } catch (e) {
       if (mounted) setState(() => _loadError = e);
@@ -65,8 +76,17 @@ class _EditUserScreenState extends ConsumerState<EditUserScreen> {
       await repo.updateUser(
           widget.userId, _form.profilePayload(includePassword: true));
       await repo.upsertSalaryStructure(widget.userId, _form.salaryPayload());
+      final days = int.tryParse(_leaveDays.text.trim());
+      if (days != null && days >= 0) {
+        await ref.read(leaveRepositoryProvider).setQuota(
+              userId: widget.userId,
+              year: _leaveYear,
+              totalDays: days,
+            );
+      }
       if (!mounted) return;
       invalidatePayrollData(ref);
+      invalidateLeaveData(ref);
       ArkaSnack.success(context, 'Profile updated');
       context.pop(true);
     } catch (e) {
@@ -113,6 +133,26 @@ class _EditUserScreenState extends ConsumerState<EditUserScreen> {
               StatutorySection(form: _form),
               const SizedBox(height: 14),
               PayPackageSection(form: _form, onChanged: () => setState(() {})),
+              if ((_user?['role'] as String?) == 'EMPLOYEE') ...[
+                const SizedBox(height: 14),
+                ArkaFormSection(
+                  icon: Icons.beach_access_outlined,
+                  title: 'Leave quota',
+                  subtitle: 'Overall paid leave days for $_leaveYear',
+                  children: [
+                    TextField(
+                      controller: _leaveDays,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Total leave days ($_leaveYear)',
+                        helperText:
+                            'Employee uses this balance when applying for leave',
+                        suffixText: 'days',
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),

@@ -8,6 +8,7 @@ import 'package:arka_payroll/data/auth/auth_repository.dart';
 import 'package:arka_payroll/presentation/auth/auth_state.dart';
 import 'package:arka_payroll/presentation/router/app_router.dart';
 import 'package:arka_payroll/presentation/router/splash_gate.dart';
+import 'package:arka_payroll/presentation/widgets/app_update_gate.dart';
 import 'package:arka_payroll/providers/app_providers.dart';
 
 Future<void> main() async {
@@ -45,13 +46,15 @@ class AipsApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = ref.watch(themeControllerProvider);
 
-    return MaterialApp.router(
-      title: AppConfig.appName,
-      debugShowCheckedModeBanner: false,
-      theme: ArkaTheme.light,
-      darkTheme: ArkaTheme.dark,
-      themeMode: theme.mode,
-      routerConfig: router,
+    return AppUpdateGate(
+      child: MaterialApp.router(
+        title: AppConfig.appName,
+        debugShowCheckedModeBanner: false,
+        theme: ArkaTheme.light,
+        darkTheme: ArkaTheme.dark,
+        themeMode: theme.mode,
+        routerConfig: router,
+      ),
     );
   }
 }

@@ -7,6 +7,7 @@ import 'package:arka_payroll/core/network/api_client.dart';
 import 'package:arka_payroll/core/parse_api_num.dart';
 import 'package:arka_payroll/core/theme/theme_controller.dart';
 import 'package:arka_payroll/data/auth/auth_repository.dart';
+import 'package:arka_payroll/data/leave/leave_repository.dart';
 import 'package:arka_payroll/data/payroll/payroll_repository.dart';
 import 'package:arka_payroll/presentation/auth/auth_state.dart';
 
@@ -18,6 +19,10 @@ final authRepositoryProvider = Provider<AuthRepository>(
 
 final payrollRepositoryProvider = Provider<PayrollRepository>(
   (ref) => PayrollRepository(ref.watch(authRepositoryProvider)),
+);
+
+final leaveRepositoryProvider = Provider<LeaveRepository>(
+  (ref) => LeaveRepository(ref.watch(authRepositoryProvider)),
 );
 
 final authStateProvider = ChangeNotifierProvider<AuthState>(
@@ -51,6 +56,13 @@ void invalidatePayrollData(WidgetRef ref) {
   ref.invalidate(payrollGridProvider);
   ref.invalidate(mySlipsProvider);
   ref.invalidate(adminUsersProvider);
+}
+
+void invalidateLeaveData(WidgetRef ref) {
+  ref.invalidate(myLeaveBalanceProvider);
+  ref.invalidate(myLeaveRequestsProvider);
+  ref.invalidate(pendingLeaveProvider);
+  ref.invalidate(leaveCalendarProvider);
 }
 
 // ── Pay period ──────────────────────────────────────────────────────────────
@@ -178,6 +190,35 @@ final mySlipsProvider =
     FutureProvider.autoDispose<List<SlipSummary>>((ref) async {
   autoRefresh(ref, const Duration(seconds: 60));
   return ref.watch(payrollRepositoryProvider).fetchMySlips();
+});
+
+// ── Leave / calendar ────────────────────────────────────────────────────────
+
+final myLeaveBalanceProvider =
+    FutureProvider.autoDispose<LeaveBalance>((ref) async {
+  autoRefresh(ref, const Duration(seconds: 60));
+  return ref.watch(leaveRepositoryProvider).myBalance();
+});
+
+final myLeaveRequestsProvider =
+    FutureProvider.autoDispose<List<LeaveRequestRow>>((ref) async {
+  autoRefresh(ref, const Duration(seconds: 45));
+  return ref.watch(leaveRepositoryProvider).myRequests();
+});
+
+final pendingLeaveProvider =
+    FutureProvider.autoDispose<List<LeaveRequestRow>>((ref) async {
+  autoRefresh(ref, const Duration(seconds: 30));
+  return ref.watch(leaveRepositoryProvider).pending();
+});
+
+final leaveCalendarProvider = FutureProvider.autoDispose
+    .family<CalendarPayload, (int, int)>((ref, key) async {
+  final (year, month) = key;
+  autoRefresh(ref, const Duration(seconds: 60));
+  return ref
+      .watch(leaveRepositoryProvider)
+      .calendar(year: year, month: month);
 });
 
 // ── Root console ────────────────────────────────────────────────────────────

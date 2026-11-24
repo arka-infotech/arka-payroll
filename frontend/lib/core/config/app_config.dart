@@ -18,14 +18,29 @@ class AppConfig {
   static const String productionApiBaseUrl =
       'https://72.60.220.10/arka-payroll/api/v1';
 
+  /// Android OTA folder on the server:
+  /// `/root/releases/ArkaPayroll/updates/mobile` → public URL below.
+  static const String productionMobileUpdatesBaseUrl =
+      'https://72.60.220.10/arka-payroll/updates/mobile/';
+
   /// Optional override, e.g. local API:
   /// `--dart-define=API_BASE_URL=http://192.168.0.154:3000/api/v1`
   static const String _apiFromEnv = String.fromEnvironment('API_BASE_URL');
+  static const String _updatesFromEnv =
+      String.fromEnvironment('MOBILE_UPDATES_BASE_URL');
 
   /// Default target is production. Override with `--dart-define=API_BASE_URL=...`
   /// when developing against a local backend.
   static String get apiBaseUrl {
     if (_apiFromEnv.isNotEmpty) return _apiFromEnv;
     return productionApiBaseUrl;
+  }
+
+  /// Base URL for `latest.json` + APK (must end with `/`).
+  static String get mobileUpdatesBaseUrl {
+    final raw = _updatesFromEnv.isNotEmpty
+        ? _updatesFromEnv
+        : productionMobileUpdatesBaseUrl;
+    return raw.endsWith('/') ? raw : '$raw/';
   }
 }

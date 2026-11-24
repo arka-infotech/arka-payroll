@@ -3,4 +3,4 @@
 storePassword=USE_GITHUB_SECRET_ANDROID_STORE_PASSWORD
 keyPassword=USE_GITHUB_SECRET_ANDROID_KEY_PASSWORD
 keyAlias=aips
-storeFile=keystore/aips-release.jks
+storeFile=../keystore/aips-release.jks

@@ -1,0 +1,7 @@
+{
+  "versionCode": 2,
+  "versionName": "1.0.1",
+  "forceUpdate": false,
+  "notes": "Employee login, leave, calendar, and auto-update.",
+  "apk": "aips-release.apk"
+}

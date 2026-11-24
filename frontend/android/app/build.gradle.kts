@@ -51,13 +51,8 @@ android {
                 keyAliasValue != null &&
                 keyPasswordValue != null
             ) {
-                val resolved =
-                    if (file(storeFilePath).isAbsolute) {
-                        file(storeFilePath)
-                    } else {
-                        rootProject.file(storeFilePath)
-                    }
-                storeFile = resolved
+                // Paths in key.properties are relative to android/app/ (e.g. ../keystore/...)
+                storeFile = file(storeFilePath).absoluteFile
                 storePassword = storePasswordValue
                 keyAlias = keyAliasValue
                 keyPassword = keyPasswordValue

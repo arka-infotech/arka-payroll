@@ -45,6 +45,15 @@ class AppScaffold extends ConsumerWidget {
   /// Desktop content stops growing past this so lists and forms stay readable.
   static const double maxContentWidth = 1240;
 
+  static const _employeeDestinations = [
+    _NavItem('/my-slips', Icons.receipt_long_outlined,
+        Icons.receipt_long_rounded, 'Slips'),
+    _NavItem('/my-leave', Icons.beach_access_outlined,
+        Icons.beach_access_rounded, 'Leave'),
+    _NavItem('/my-calendar', Icons.calendar_month_outlined,
+        Icons.calendar_month_rounded, 'Calendar'),
+  ];
+
   static const _hrDestinations = [
     _NavItem('/dashboard', Icons.space_dashboard_outlined,
         Icons.space_dashboard_rounded, 'Home'),
@@ -54,6 +63,8 @@ class AppScaffold extends ConsumerWidget {
         '/punch', Icons.payments_outlined, Icons.payments_rounded, 'Punch'),
     _NavItem('/payslips', Icons.receipt_long_outlined,
         Icons.receipt_long_rounded, 'Payslips'),
+    _NavItem('/hr-leave', Icons.event_available_outlined,
+        Icons.event_available_rounded, 'Leave'),
   ];
 
   static const _superDestinations = [
@@ -68,10 +79,11 @@ class AppScaffold extends ConsumerWidget {
     final wide = context.isDesktop;
     final loc = GoRouterState.of(context).matchedLocation;
 
-    // Admin-only app — Super Admin gets Root; everyone else with access is HR.
-    final destinations = auth.user?.isSuperAdmin == true
-        ? _superDestinations
-        : _hrDestinations;
+    final destinations = auth.user?.isEmployee == true
+        ? _employeeDestinations
+        : auth.user?.isSuperAdmin == true
+            ? _superDestinations
+            : _hrDestinations;
 
     var selected = destinations.indexWhere((d) => loc.startsWith(d.path));
     if (selected < 0) selected = 0;

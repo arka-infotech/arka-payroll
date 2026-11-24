@@ -33,6 +33,21 @@ enum PayrollStatus {
   PAID
 }
 
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum LeaveType {
+  CASUAL
+  SICK
+  EARNED
+  UNPAID
+  OTHER
+}
+
 model User {
   id           String           @id @default(uuid()) @db.Uuid
   email        String           @unique
@@ -70,12 +85,76 @@ model User {
 
   salaryStructure SalaryStructure?
   monthlyPayrolls MonthlyPayroll[]
+  leaveQuotas     LeaveQuota[]
+  leaveRequests   LeaveRequest[] @relation("LeaveApplicant")
+  leaveReviews    LeaveRequest[] @relation("LeaveReviewer")
 
   createdBy User? @relation("UserCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   createdUsers User[] @relation("UserCreatedBy")
 
   @@index([role, status])
   @@map("users")
+}
+
+/// Annual leave entitlement for an employee (admin-set overall days).
+model LeaveQuota {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  year   Int
+  /// Total paid leave days allowed in this calendar year.
+  totalDays Int @map("total_days")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, year])
+  @@index([year])
+  @@map("leave_quotas")
+}
+
+/// Employee leave application; admin approves/rejects.
+model LeaveRequest {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  user   User   @relation("LeaveApplicant", fields: [userId], references: [id], onDelete: Cascade)
+
+  type      LeaveType
+  startDate DateTime @map("start_date") @db.Date
+  endDate   DateTime @map("end_date") @db.Date
+  /// Inclusive calendar days in the range (simple count for MVP).
+  days      Int
+  reason    String?  @db.VarChar(500)
+  status    LeaveStatus @default(PENDING)
+
+  reviewedById String?   @map("reviewed_by_id") @db.Uuid
+  reviewedBy   User?     @relation("LeaveReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime? @map("reviewed_at")
+  reviewNote   String?   @map("review_note") @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId, status])
+  @@index([startDate, endDate])
+  @@index([status, createdAt(sort: Desc)])
+  @@map("leave_requests")
+}
+
+/// Company / national holidays shown on the employee calendar.
+model CompanyHoliday {
+  id         String   @id @default(uuid()) @db.Uuid
+  date       DateTime @db.Date
+  name       String   @db.VarChar(120)
+  year       Int
+  isNational Boolean  @default(true) @map("is_national")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([date, name])
+  @@index([year, date])
+  @@map("company_holidays")
 }
 
 /// Immutable activity log — readable only by SUPER_ADMIN.

@@ -32,13 +32,6 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // App is admin-only — employees have profiles for payroll, not app login.
-    if (user.role === AppRole.EMPLOYEE) {
-      throw new UnauthorizedException(
-        'Employee login is disabled. Use an Admin account to sign in.',
-      );
-    }
-
     await this.prisma.user.update({
       where: { id: user.id },
       data: { lastSeenAt: new Date() },
@@ -96,11 +89,6 @@ export class AuthService {
     });
     if (!user || user.status !== 'ACTIVE') {
       throw new UnauthorizedException();
-    }
-    if (user.role === AppRole.EMPLOYEE) {
-      throw new UnauthorizedException(
-        'Employee login is disabled. Use an Admin account to sign in.',
-      );
     }
     return user;
   }
