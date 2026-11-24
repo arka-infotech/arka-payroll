@@ -239,6 +239,11 @@ class _EditSlipScreenState extends ConsumerState<EditSlipScreen> {
       _saveError = null;
     });
     try {
+      final paidDays = int.tryParse(_paid.text) ?? 0;
+      final lopDays = int.tryParse(_lop.text) ?? 0;
+      if (paidDays < 0 || paidDays > 31 || lopDays < 0 || lopDays > 31) {
+        throw StateError('Paid days and LOP must be between 0 and 31.');
+      }
       await ref
           .read(payrollRepositoryProvider)
           .saveSlipDocument(widget.payrollId, {
@@ -249,8 +254,8 @@ class _EditSlipScreenState extends ConsumerState<EditSlipScreen> {
         'payDate': _toIso(_payDate.text),
         'payPeriod': _payPeriod.text.trim(),
         'payslipMonth': _payslipMonth.text.trim(),
-        'paidDays': int.tryParse(_paid.text) ?? 0,
-        'lopDays': int.tryParse(_lop.text) ?? 0,
+        'paidDays': paidDays,
+        'lopDays': lopDays,
         'notes': _notes.text.trim(),
         'earnings': _payload(_earnings),
         'deductions': _payload(_deductions),
@@ -288,8 +293,9 @@ class _EditSlipScreenState extends ConsumerState<EditSlipScreen> {
           children: [
             const ArkaInlineAlert(
               tone: ArkaAlertTone.info,
+              title: 'Print-only edits',
               message:
-                  'Changes here only affect the printed slip. Download the PDF again to see them.',
+                  'Paid days here update the PDF text. To recalculate salary from attendance, use Punch salary → Days worked, then lock again. Locked slips re-email on save (not on the pay/credit date).',
             ),
             const SizedBox(height: 14),
             if (_saveError != null) ...[
@@ -365,19 +371,24 @@ class _EditSlipScreenState extends ConsumerState<EditSlipScreen> {
                           controller: _paid,
                           keyboardType: TextInputType.number,
                           inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(2),
                           ],
-                          decoration:
-                              const InputDecoration(labelText: 'Paid days'),
+                          decoration: const InputDecoration(
+                            labelText: 'Paid days (on PDF)',
+                            helperText: 'Oct=31, Nov=30, etc.',
+                          ),
                         ),
                         TextField(
                           controller: _lop,
                           keyboardType: TextInputType.number,
                           inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(2),
                           ],
-                          decoration:
-                              const InputDecoration(labelText: 'LOP days'),
+                          decoration: const InputDecoration(
+                            labelText: 'LOP days (on PDF)',
+                          ),
                         ),
                       ],
                     ),

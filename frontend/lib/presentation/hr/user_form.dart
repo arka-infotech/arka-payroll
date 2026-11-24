@@ -555,7 +555,7 @@ class PayPackageSection extends StatelessWidget {
               decoration: const InputDecoration(
                 labelText: 'Salary credit day *',
                 helperText:
-                    'Day of next month salary is paid (e.g. 3 → Sept slip, pay date 3 Oct)',
+                    'Pay date on the slip (e.g. 3 → Nov slip shows 3 Dec). Email still sends when you lock, not on that day.',
               ),
               validator: UserValidators.payDay,
             ),

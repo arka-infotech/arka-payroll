@@ -97,7 +97,12 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
     _resync = false;
     _selectedId = s.userId;
     _formError = null;
-    _daysCtrl.text = '${s.workingDaysInMonth}';
+    // Prefer calendar length when stored days look invalid for this month.
+    final days = (s.workingDaysInMonth < 1 ||
+            s.workingDaysInMonth > s.calendarDaysInMonth)
+        ? s.calendarDaysInMonth
+        : s.workingDaysInMonth;
+    _daysCtrl.text = '$days';
     _lopCtrl.text = '${s.unpaidLeaveDays}';
     _bonusCtrl.text = s.bonus == 0 ? '0' : s.bonus.toStringAsFixed(0);
     _otherCtrl.text =
@@ -256,8 +261,8 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
       ArkaSnack.success(
         context,
         s.isLocked
-            ? 'Slip updated for ${s.name} — email will retry in the background'
-            : 'Salary locked for ${s.name} — check Dashboard for email status',
+            ? 'Slip updated for ${s.name} — PDF email retries now (not on credit day)'
+            : 'Salary locked for ${s.name} — payslip email sends now; pay date is the credit day',
       );
       _refreshAfterWrite();
     } catch (e) {
@@ -562,12 +567,14 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
         ArkaInlineAlert(
           tone: ArkaAlertTone.info,
           title: '${_period.label} is locked',
-          message: 'Saving or locking again updates the existing slip.',
+          message:
+              'Locking again updates the slip and re-sends the PDF email now. Pay/credit date on the slip is separate from when email sends.',
         ),
       ArkaFormSection(
         icon: Icons.event_available_rounded,
         title: 'Attendance',
-        subtitle: '${s.calendarDaysInMonth} calendar days in ${_period.label}',
+        subtitle:
+            '${s.calendarDaysInMonth} calendar days in ${_period.label} — this drives pay calculation',
         trailing: TextButton(
           onPressed: () {
             _daysCtrl.text = '${s.calendarDaysInMonth}';
@@ -589,6 +596,8 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
                 ],
                 decoration: InputDecoration(
                     labelText: 'Days worked',
+                    helperText:
+                        'Use Full month for calendar days (${s.calendarDaysInMonth})',
                     suffixText: 'days',
                     errorText: _daysWarning),
                 onChanged: (_) => setState(() => _validateDays(s)),
@@ -604,7 +613,7 @@ class _PunchSalaryScreenState extends ConsumerState<PunchSalaryScreen> {
                   labelText: 'Unpaid leave (LOP)',
                   suffixText: 'days',
                   helperText: lopEstimate == null
-                      ? null
+                      ? 'Subtracted from days worked for pay'
                       : 'Deduction ≈ ${Fmt.inr(lopEstimate)}',
                 ),
                 onChanged: (_) => setState(() {}),

@@ -153,7 +153,7 @@ class _HrPayslipsScreenState extends ConsumerState<HrPayslipsScreen> {
     return AppScaffold(
       title: 'Payslips',
       subtitle:
-          'Drafts appear automatically on each pay day until you punch them',
+          'Lock in Punch salary to calculate & email. Credit day is only the pay date on the PDF.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

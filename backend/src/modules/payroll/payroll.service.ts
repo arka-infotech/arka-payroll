@@ -15,6 +15,7 @@ import {
   buildTrackingReference,
   payslipFilename,
   formatPayslipPeriodRange,
+  formatPayslipMonthLabel,
   computeMonthlyPayroll,
   daysInMonth,
   SalaryStructureInput,
@@ -614,12 +615,26 @@ export class PayrollService {
       orderBy: [{ year: 'desc' }, { month: 'desc' }],
     });
 
+    // Days worked must follow THIS month's calendar length (Oct=31, Nov=30).
+    // Never inherit the previous month's day count — that made Oct show 30 after Sep.
+    // If an existing DRAFT still carries the previous month's day count, correct it.
+    let workingDays = existing?.workingDaysInMonth ?? calDays;
+    if (
+      existing &&
+      prev &&
+      existing.workingDaysInMonth === prev.workingDaysInMonth &&
+      existing.workingDaysInMonth !== calDays
+    ) {
+      workingDays = calDays;
+    }
+    if (workingDays > calDays) workingDays = calDays;
+    if (workingDays < 1) workingDays = calDays;
+
     const dto: ProcessPayrollDto = {
       userId,
       year,
       month,
-      workingDaysInMonth:
-        existing?.workingDaysInMonth ?? prev?.workingDaysInMonth ?? calDays,
+      workingDaysInMonth: workingDays,
       unpaidLeaveDays:
         existing?.unpaidLeaveDays ?? prev?.unpaidLeaveDays ?? 0,
       bonus: existing ? toNumber(existing.bonus) : toNumber(prev?.bonus ?? 0),
@@ -641,9 +656,19 @@ export class PayrollService {
     requester: JwtPayload,
   ) {
     const now = new Date();
-    const isCurrent =
-      year === now.getFullYear() && month === now.getMonth() + 1;
-    if (!isCurrent) return;
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+    const isCurrent = year === currentYear && month === currentMonth;
+    const isFuture =
+      year > currentYear || (year === currentYear && month > currentMonth);
+    if (isFuture) return;
+
+    // Past months: only fix inherited day counts on DRAFTs (do not rebuild pay
+    // from today's CTC). Current month: full draft materialize after credit day.
+    if (!isCurrent) {
+      await this.repairDraftWorkingDays(year, month, requester);
+      return;
+    }
 
     const users = await this.prisma.user.findMany({
       where: {
@@ -658,6 +683,82 @@ export class PayrollService {
       const creditDay = u.salaryStructure?.salaryCreditDay ?? 3;
       if (now.getDate() < creditDay) continue;
       await this.materializeDraftForUser(u.id, year, month);
+    }
+  }
+
+  /** Fix DRAFT rows that inherited the previous month's days (e.g. Oct=30). */
+  private async repairDraftWorkingDays(
+    year: number,
+    month: number,
+    requester: JwtPayload,
+  ) {
+    const calDays = daysInMonth(year, month);
+    const drafts = await this.prisma.monthlyPayroll.findMany({
+      where: {
+        year,
+        month,
+        status: PayrollStatus.DRAFT,
+        user: visibleUsersWhere(requester),
+      },
+      select: {
+        id: true,
+        userId: true,
+        workingDaysInMonth: true,
+        unpaidLeaveDays: true,
+        trackingReference: true,
+        bonus: true,
+        specialAdjustment: true,
+        otherEarnings: true,
+        slipNotes: true,
+        slipDocument: true,
+      },
+    });
+
+    for (const draft of drafts) {
+      const prev = await this.prisma.monthlyPayroll.findFirst({
+        where: {
+          userId: draft.userId,
+          OR: [{ year: { lt: year } }, { year, month: { lt: month } }],
+        },
+        orderBy: [{ year: 'desc' }, { month: 'desc' }],
+        select: { workingDaysInMonth: true },
+      });
+
+      const inheritedWrong =
+        !!prev &&
+        draft.workingDaysInMonth === prev.workingDaysInMonth &&
+        draft.workingDaysInMonth !== calDays;
+      const outOfRange =
+        draft.workingDaysInMonth < 1 || draft.workingDaysInMonth > calDays;
+      if (!inheritedWrong && !outOfRange) continue;
+
+      try {
+        const user = await this.loadEmployeeWithStructure(draft.userId);
+        await this.writeDraftRow(
+          user,
+          {
+            userId: draft.userId,
+            year,
+            month,
+            workingDaysInMonth: calDays,
+            unpaidLeaveDays: Math.min(draft.unpaidLeaveDays, calDays),
+            bonus: toNumber(draft.bonus),
+            specialAdjustment: toNumber(draft.specialAdjustment),
+            otherEarnings: toNumber(draft.otherEarnings),
+            slipNotes: draft.slipNotes ?? undefined,
+          },
+          {
+            id: draft.id,
+            trackingReference: draft.trackingReference,
+            slipDocument: draft.slipDocument,
+          },
+        );
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `repairDraftWorkingDays skipped ${draft.id}: ${detail}`,
+        );
+      }
     }
   }
 
@@ -791,6 +892,15 @@ export class PayrollService {
       throw new ForbiddenException('Cannot edit this salary slip');
     }
 
+    const paidDays = clampDays(dto.paidDays);
+    const lopDays = clampDays(dto.lopDays);
+    const calDays = daysInMonth(slip.year, slip.month);
+    if (paidDays > calDays) {
+      throw new BadRequestException(
+        `Paid days (${paidDays}) exceeds ${formatPayslipMonthLabel(slip.year, slip.month)} (${calDays} days)`,
+      );
+    }
+
     const earnings = dto.earnings.map((l) => ({
       label: l.label.trim(),
       amount: roundMoney(l.amount),
@@ -804,6 +914,10 @@ export class PayrollService {
       deductions.reduce((s, l) => s + l.amount, 0),
     );
     const net = roundMoney(gross - totalDeductions);
+    if (![gross, totalDeductions, net].every(Number.isFinite)) {
+      throw new BadRequestException('Earnings/deductions amounts are invalid');
+    }
+
     const document = {
       companyName:
         dto.companyName?.trim() ||
@@ -819,43 +933,79 @@ export class PayrollService {
       payDate: dto.payDate?.trim() || undefined,
       payPeriod: dto.payPeriod?.trim() || undefined,
       payslipMonth: dto.payslipMonth?.trim() || undefined,
-      paidDays: dto.paidDays,
-      lopDays: dto.lopDays,
+      paidDays,
+      lopDays,
       notes: dto.notes?.trim() || undefined,
       earnings,
       deductions,
     };
 
-    const updated = await this.prisma.monthlyPayroll.update({
-      where: { id: payrollId },
-      data: {
-        daysPayable: dto.paidDays,
-        unpaidLeaveDays: dto.lopDays,
-        grossEarnings: gross,
-        totalDeductions,
-        netPay: net,
-        slipNotes: dto.notes?.trim() || null,
-        payDate: parseDateOnly(dto.payDate) ?? slip.payDate,
-        slipDocument: document as Prisma.InputJsonValue,
-      },
-    });
+    try {
+      await this.prisma.monthlyPayroll.update({
+        where: { id: payrollId },
+        data: {
+          daysPayable: paidDays,
+          unpaidLeaveDays: lopDays,
+          grossEarnings: gross,
+          totalDeductions,
+          netPay: net,
+          slipNotes: dto.notes?.trim() || null,
+          payDate: parseDateOnly(dto.payDate) ?? slip.payDate,
+          slipDocument: document as Prisma.InputJsonValue,
+        },
+      });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      this.logger.error(`updateSlipDocument failed for ${payrollId}: ${detail}`);
+      throw new BadRequestException(
+        'Could not save slip changes. Check paid days, amounts, and try again.',
+      );
+    }
 
-    // Editing a locked slip from Payslips should re-send the PDF (same as re-lock).
+    // Editing a locked slip should re-send the PDF — never fail the save if mail fails.
     if (
       slip.status === PayrollStatus.LOCKED ||
       slip.status === PayrollStatus.PROCESSED
     ) {
-      await this.prisma.monthlyPayroll.update({
-        where: { id: payrollId },
-        data: { emailStatus: 'PENDING', emailError: null, emailSentAt: null },
-      });
-      void this.emailLockedSlip(payrollId, actor).catch((err) => {
+      try {
+        await this.prisma.monthlyPayroll.update({
+          where: { id: payrollId },
+          data: { emailStatus: 'PENDING', emailError: null, emailSentAt: null },
+        });
+        void this.emailLockedSlip(payrollId, actor).catch((err) => {
+          const detail = err instanceof Error ? err.message : String(err);
+          this.logger.warn(`Payslip email failed for ${payrollId}: ${detail}`);
+        });
+      } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
-        this.logger.warn(`Payslip email failed for ${payrollId}: ${detail}`);
-      });
+        this.logger.warn(
+          `Could not queue payslip email after edit for ${payrollId}: ${detail}`,
+        );
+      }
     }
 
-    return updated;
+    // Return JSON-safe fields only (Prisma Decimal in a full row can confuse clients).
+    return this.prisma.monthlyPayroll.findUniqueOrThrow({
+      where: { id: payrollId },
+      select: {
+        id: true,
+        year: true,
+        month: true,
+        status: true,
+        daysPayable: true,
+        unpaidLeaveDays: true,
+        workingDaysInMonth: true,
+        netPay: true,
+        grossEarnings: true,
+        totalDeductions: true,
+        payDate: true,
+        slipNotes: true,
+        slipDocument: true,
+        emailStatus: true,
+        emailError: true,
+        trackingReference: true,
+      },
+    });
   }
 
   async generatePdfBuffer(
@@ -1012,5 +1162,11 @@ function parseDateOnly(value?: string | null): Date | null {
 }
 
 function roundMoney(n: number): number {
+  if (!Number.isFinite(n)) return 0;
   return Math.round(n * 100) / 100;
+}
+
+function clampDays(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(31, Math.max(0, Math.trunc(n)));
 }

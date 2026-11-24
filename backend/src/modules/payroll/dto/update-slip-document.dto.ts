@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsInt,
@@ -11,12 +11,26 @@ import {
   ValidateNested,
 } from 'class-validator';
 
+/** Coerce JSON numbers/strings and round to 2dp so float noise does not 400/500. */
+function toMoney(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100) / 100;
+}
+
+function toInt(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.trunc(n);
+}
+
 export class SlipLineDto {
   @IsString()
   @MaxLength(80)
   label!: string;
 
-  @IsNumber({ maxDecimalPlaces: 2 })
+  @Transform(({ value }) => toMoney(value))
+  @IsNumber()
   amount!: number;
 }
 
@@ -58,11 +72,13 @@ export class UpdateSlipDocumentDto {
   @MaxLength(40)
   payslipMonth?: string;
 
+  @Transform(({ value }) => toInt(value))
   @IsInt()
   @Min(0)
   @Max(31)
   paidDays!: number;
 
+  @Transform(({ value }) => toInt(value))
   @IsInt()
   @Min(0)
   @Max(31)
